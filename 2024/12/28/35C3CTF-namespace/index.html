@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   
   
-  <title>a2ure blog</title>
+  <title>35C3CTF-namespace | a2ure blog</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-  <meta name="description" content="容器逃逸namespace的几种情况 mnt namespaces，mount的结果不会影响其他mnt namespaces中的进程 cgroup namespaces，cgroup用于限制进程对cpu等系统资源的使用 uts namespaces，隔离hostname和NIS域名 ipc namespaces，隔离消息队列、信号量和共享内存3钟进程间通信的方式，并不会限制其他的ipc通信 use">
+  <meta name="description" content="前置知识 cgroup namespaces，cgroup用于限制进程对cpu等系统资源的使用  uts namespaces，隔离hostname和NIS域名  ipc namespaces，隔离消息队列、信号量和共享内存3钟进程间通信的方式，并不会限制其他的ipc通信  user namespaces，同一个用户在不同的user namespaces中可以对应不同的uid，一个user nam">
 <meta property="og:type" content="article">
-<meta property="og:title" content="a2ure blog">
+<meta property="og:title" content="35C3CTF-namespace">
 <meta property="og:url" content="http://example.com/2024/12/28/35C3CTF-namespace/index.html">
 <meta property="og:site_name" content="a2ure blog">
-<meta property="og:description" content="容器逃逸namespace的几种情况 mnt namespaces，mount的结果不会影响其他mnt namespaces中的进程 cgroup namespaces，cgroup用于限制进程对cpu等系统资源的使用 uts namespaces，隔离hostname和NIS域名 ipc namespaces，隔离消息队列、信号量和共享内存3钟进程间通信的方式，并不会限制其他的ipc通信 use">
+<meta property="og:description" content="前置知识 cgroup namespaces，cgroup用于限制进程对cpu等系统资源的使用  uts namespaces，隔离hostname和NIS域名  ipc namespaces，隔离消息队列、信号量和共享内存3钟进程间通信的方式，并不会限制其他的ipc通信  user namespaces，同一个用户在不同的user namespaces中可以对应不同的uid，一个user nam">
 <meta property="og:locale" content="en_US">
 <meta property="article:published_time" content="2024-12-28T12:25:39.046Z">
-<meta property="article:modified_time" content="2024-12-28T12:31:45.464Z">
+<meta property="article:modified_time" content="2024-12-28T13:37:36.556Z">
 <meta property="article:author" content="a2ure">
 <meta name="twitter:card" content="summary">
   
@@ -81,25 +81,39 @@
   <div class="article-inner">
     
     
+      <header class="article-header">
+        
+  
+    <h1 class="p-name article-title" itemprop="headline name">
+      35C3CTF-namespace
+    </h1>
+  
+
+      </header>
+    
     <div class="e-content article-entry" itemprop="articleBody">
       
-        <h1 id="容器逃逸"><a href="#容器逃逸" class="headerlink" title="容器逃逸"></a>容器逃逸</h1><h2 id="namespace的几种情况"><a href="#namespace的几种情况" class="headerlink" title="namespace的几种情况"></a>namespace的几种情况</h2><ul>
-<li>mnt namespaces，mount的结果不会影响其他mnt namespaces中的进程</li>
-<li>cgroup namespaces，cgroup用于限制进程对cpu等系统资源的使用</li>
-<li>uts namespaces，隔离hostname和NIS域名</li>
-<li>ipc namespaces，隔离消息队列、信号量和共享内存3钟进程间通信的方式，并不会限制其他的ipc通信</li>
-<li>user namespaces，同一个用户在不同的user namespaces中可以对应不同的uid，一个user namespaces中的普通用户甚至可以是另一个user namespaces中的root用户。此外，新建或加入一个user namespaces时，无论新的uid是多少，能够在这个user namespaces中获取到全部的capabilities，不过需要注意如果uid不为0的话执行execve等函数后capabilities会全部丢失掉，后面会详细介绍capabilities</li>
-<li>pid namespaces，隔离进程的pid，创建新的pid namespaces后，外层的pid namespaces可以看到里面的进程，而里面的进程无法看到外面的进程</li>
-<li>net namespaces，隔离网络相关的资源，比如ip协议栈、路由表等等，此外它还会隔离unix域的abstract socket，这点在后面也会用到</li>
-<li>time namespaces, 隔离系统时间，进程在不同命名空间中可以看到不同的系统时间。</li>
+        <h2 id="前置知识"><a href="#前置知识" class="headerlink" title="前置知识"></a>前置知识</h2><ul>
+<li><p>cgroup namespaces，cgroup用于限制进程对cpu等系统资源的使用</p>
+</li>
+<li><p>uts namespaces，隔离hostname和NIS域名</p>
+</li>
+<li><p>ipc namespaces，隔离消息队列、信号量和共享内存3钟进程间通信的方式，并不会限制其他的ipc通信</p>
+</li>
+<li><p>user namespaces，同一个用户在不同的user namespaces中可以对应不同的uid，一个user namespaces中的普通用户甚至可以是另一个user namespaces中的root用户。此外，新建或加入一个user namespaces时，无论新的uid是多少，能够在这个user namespaces中获取到全部的capabilities，不过需要注意如果uid不为0的话执行execve等函数后capabilities会全部丢失掉，后面会详细介绍capabilities</p>
+</li>
+<li><p>pid namespaces，隔离进程的pid，创建新的pid namespaces后，外层的pid namespaces可以看到里面的进程，而里面的进程无法看到外面的进程</p>
+</li>
+<li><p>net namespaces，隔离网络相关的资源，比如ip协议栈、路由表等等，此外它还会隔离unix域的abstract socket，这点在后面也会用到</p>
+</li>
+<li><p>time namespaces, 隔离系统时间，进程在不同命名空间中可以看到不同的系统时间。</p>
+</li>
 </ul>
-<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">0x7E020000=CLONE_NEWNS|CLONE_NEWCGROUP|CLONE_NEWUTS|CLONE_NEWIPC|CLONE_NEWUSER|CLONE_NEWPID|CLONE_NEWNET</span><br></pre></td></tr></table></figure>
-
 
       
     </div>
     <footer class="article-footer">
-      <a data-url="http://example.com/2024/12/28/35C3CTF-namespace/" data-id="cm585vuqs0000p0gg2t8o2j2a" data-title="" class="article-share-link"><span class="fa fa-share">Share</span></a>
+      <a data-url="http://example.com/2024/12/28/35C3CTF-namespace/" data-id="cm585vuqs0000p0gg2t8o2j2a" data-title="35C3CTF-namespace" class="article-share-link"><span class="fa fa-share">Share</span></a>
       
       
       
@@ -158,7 +172,7 @@
           </li>
         
           <li>
-            <a href="/2024/12/28/35C3CTF-namespace/">(no title)</a>
+            <a href="/2024/12/28/35C3CTF-namespace/">35C3CTF-namespace</a>
           </li>
         
       </ul>

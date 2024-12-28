@@ -22,7 +22,7 @@
 <meta property="og:image" content="http://example.com/images/image-20241216095633714.png">
 <meta property="og:image" content="http://example.com/images/image-20241216101845864.png">
 <meta property="article:published_time" content="2024-12-28T12:33:08.524Z">
-<meta property="article:modified_time" content="2024-12-28T12:47:37.679Z">
+<meta property="article:modified_time" content="2024-12-28T13:13:50.691Z">
 <meta property="article:author" content="a2ure">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="http://example.com/images/image-20241216092601552.png">
@@ -103,7 +103,8 @@
     <div class="e-content article-entry" itemprop="articleBody">
       
         <h2 id="一-前言"><a href="#一-前言" class="headerlink" title="一.前言"></a>一.前言</h2><p>​	本题主要是一个虚拟机的题，由于比赛时间并不是很长，因此这个题在逆向方面确实没有给大家过多的难度，利用原理也十分简单，由于虚拟机中load和store指令会读取或者存入栈中的一个数组，并且这个数组的长度不够长，导致攻击者可以任意地址写栈中0xfff大小的区域，因此可以泄露Libc并且通过rop实现攻击</p>
-<h2 id="二-逆向一下结构体"><a href="#二-逆向一下结构体" class="headerlink" title="二.逆向一下结构体"></a>二.逆向一下结构体</h2><p>​	首先就是程序的入口main函数，他首先初始化，之后读取0x300长度的opcode。之后进入到sub_1230函数。<img src="/images/image-20241216092601552.png" alt="image-20241216092601552"></p>
+<h2 id="二-逆向一下结构体"><a href="#二-逆向一下结构体" class="headerlink" title="二.逆向一下结构体"></a>二.逆向一下结构体</h2><p>​	首先就是程序的入口main函数，他首先初始化，之后读取0x300长度的opcode。之后进入到sub_1230函数。</p>
+<p><img src="/images/image-20241216092601552.png" alt="image-20241216092601552"></p>
 <p>​	这里面就是对于虚拟机中的寄存器进行初始化操作，首先a1是传入的一个bss的一个地址，然后这个题其实虚拟机的逆向难度也不复杂，直接看初始化和后面的run函数就可以分析出来，初始化的时候首先初始化了rip，然后以及opcode的指针和最后结束的指针，之后就是循环的初始化寄存器的值</p>
 <p><img src="/images/image-20241216092741025.png" alt="image-20241216092741025"></p>
 <p>​	之后通过View -&gt; open subviews -&gt; local types里面加入对应结构体信息，然后把所有的指针都转换成结构体信息。</p>
@@ -145,7 +146,7 @@
   
     <a href="/2024/12/28/35C3CTF-namespace/" id="article-nav-older" class="article-nav-link-wrap">
       <strong class="article-nav-caption">Older</strong>
-      <div class="article-nav-title"></div>
+      <div class="article-nav-title">35C3CTF-namespace</div>
     </a>
   
 </nav>
@@ -187,7 +188,7 @@
           </li>
         
           <li>
-            <a href="/2024/12/28/35C3CTF-namespace/">(no title)</a>
+            <a href="/2024/12/28/35C3CTF-namespace/">35C3CTF-namespace</a>
           </li>
         
       </ul>
