@@ -1168,7 +1168,7 @@ pre .javascript .function {
 }
 .links-of-author a::before,
 .links-of-author span.exturl::before {
-  background: #fff;
+  background: #1cff3d;
   border-radius: 50%;
   content: ' ';
   display: inline-block;
@@ -2288,4 +2288,25 @@ embed {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+body {
+  background: url("/images/background.png");
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+  background-size: cover;
+  background-position: 50% 50%;
+}
+.sidebar {
+  transition-duration: 0.4s;
+  opacity: 0.8;
+}
+.posts-expand .post-title-link {
+  color: #222;
+}
+.post-block {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* 更柔和的阴影 */
+  border: 1px solid #f0f0f0; /* 添加细边框 */
+  padding: 40px;
 }
