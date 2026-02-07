@@ -156,6 +156,94 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/07/CVE-2023-4015/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="a2ure">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="a2ure's blog">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2026/02/07/CVE-2023-4015/" class="post-title-link" itemprop="url">Linux Netfilter 提权漏洞 (CVE-2023-4015) 复现与利用分析</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-02-07 10:20:00 / Modified: 10:21:58" itemprop="dateCreated datePublished" datetime="2026-02-07T10:20:00+08:00">2026-02-07</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/CVE/" itemprop="url" rel="index"><span itemprop="name">CVE</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>1.1k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>4 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h1 id="Linux-Netfilter-提权漏洞-CVE-2023-4015-复现与利用分析"><a href="#Linux-Netfilter-提权漏洞-CVE-2023-4015-复现与利用分析" class="headerlink" title="Linux Netfilter 提权漏洞 (CVE-2023-4015) 复现与利用分析"></a>Linux Netfilter 提权漏洞 (CVE-2023-4015) 复现与利用分析</h1><p>前段时间我深入研究了 Linux 内核网络子系统的安全性，特别是 Netfilter 模块，历年来它贡献了不少高质量的漏洞。CVE-2023-4015 是一个非常经典的逻辑漏洞，它发生在 nf_tables 处理事务异常回滚的过程中。这个漏洞的迷人之处在于，它通过一次错误的事务处理，欺骗内核对同一个对象进行了两次“去激活”操作，从而人为制造了一个 Use-After-Free (UAF) 场景。利用这个漏洞，我们可以在拥有 CAP_NET_ADMIN 权限的情况下，在最新的 Linux 内核上实现本地提权。</p>
+<p>在深入漏洞之前，必须先理解 nf_tables 的事务模型。为了保证规则集更新的原子性，Netfilter 采用了一套类似数据库的“两阶段提交”机制。当我们通过 Netlink 发送一批配置请求时，内核会先进入 Preparation Phase，负责分配资源并检查参数合法性。如果这一步顺利通过，才会进入 Commit 阶段正式生效；否则会进入 Error Handling，触发 Abort 操作回滚之前所有的更改。这个漏洞的核心逻辑缺陷，正隐藏在出错与回滚这两个环节的重叠之中。</p>
+<p>漏洞的根源位于 nf_tables_newrule 函数。当我们尝试创建一个新规则时，如果过程中发生错误，内核会调用 nft_rule_expr_deactivate 来清理已经解析了一半的表达式。如果该规则包含一个用于跳转的 immediate 表达式，nft_immediate_deactivate 会被调用，进而递归地去激活目标链并解绑。然而，当整个事务因为该错误进入 Abort 阶段时，内核会再次尝试处理这个已经报错的规则。由于之前的清理逻辑并未完整更新事务状态，导致 Abort 阶段的检查失效，nft_rule_expr_deactivate 被第二次调用。结果便是同一个 Chain 的引用计数被递减了两次，使得内核误认为该 Chain 已无人使用并将其释放，而我们手中依然保留着指向它的悬垂指针。</p>
+<p>利用这个 UAF 漏洞的第一步是搭建稳定的复现环境。由于操作 Netfilter 需要权限，通过 unshare 创建新的命名空间是最简单的方法。同时，为了确保堆喷射的稳定性，我将进程绑定到了 CPU 0 上，利用 SLUB 分配器的 Per-CPU 特性防止对象被分配到其他核心。在泄露堆地址阶段，我巧妙地利用了 kmalloc-cg-192 大小的 nft_rule 对象来填充被释放的坑位。这里利用了 nft_chain 的 name 字段与 nft_rule 的 list.next 字段在内存偏移上的重叠，通过 dump 规则成功获取到了内核堆地址。</p>
+<p>随后是绕过 KASLR 的关键步骤。我利用了 nft_table 的 udata 功能，在用户态伪造了一个 nft_chain 结构体并喷射到 UAF 坑位中。通过将伪造 Chain 的 name 指针指向堆上包含 nft_expr ops 指针的位置，再次触发 dump 即可读取到内核函数地址，从而计算出内核基址。最后一步是劫持 RIP。我选择了 nft_expr 的 deactivate 函数指针作为劫持点，通过 udata 喷射伪造的表达式对象，将其 ops 指针指向堆上的虚函数表。利用一个 PUSH RSI; JMP QWORD PTR [RSI + 0xF] 的 JOP gadget 配合栈迁移指令，成功将控制流引入布置在堆上的 ROP 链。</p>
+<p>最终的 ROP 链执行了标准的提权流程：首先调用 commit_creds 提升凭证，然后切换回 init 进程的命名空间以实现容器逃逸，最后通过 swapgs 恢复寄存器安全返回用户态，启动一个 Root Shell。整个 main 函数的逻辑清晰地串联了从触发 UAF 到多次泄露，最后实施劫持的全部过程。这次复现不仅是对漏洞成因的深刻理解，更是对内核内存布局精密控制能力的实战检验。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">int</span> <span class="title function_">main</span><span class="params">()</span> &#123;</span><br><span class="line">    setup(); <span class="comment">// 初始化沙箱和CPU绑定</span></span><br><span class="line">    </span><br><span class="line">    <span class="comment">// 循环尝试，直到成功泄露堆地址</span></span><br><span class="line">    <span class="keyword">while</span> (heap &lt; <span class="number">0xffff000000000000</span>) &#123;</span><br><span class="line">        trigger_uaf(); <span class="comment">// 触发漏洞，制造 UAF</span></span><br><span class="line">        leak_heap();   <span class="comment">// 喷射 Rule，泄露堆地址</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 循环尝试，直到成功泄露内核基址</span></span><br><span class="line">    <span class="keyword">while</span> (vmlinux &lt; <span class="number">0xffffffff00000000</span>) &#123;</span><br><span class="line">        leak_vmlinux(); <span class="comment">// 喷射 Fake Chain，利用任意读泄露 Ops 指针</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 最终一击</span></span><br><span class="line">    spray_krop(); <span class="comment">// 部署 ROP 链和 JOP Gadget</span></span><br><span class="line">    escalate();   <span class="comment">// 触发 deactivate，执行 ROP</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/07/%E9%95%BF%E5%9F%8E%E6%9D%AFavm%20wp/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -945,7 +1033,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">5</span>
+          <span class="site-state-item-count">6</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -988,12 +1076,12 @@
     <span class="post-meta-item-icon">
       <i class="fa fa-chart-area"></i>
     </span>
-    <span title="Symbols count total">20k</span>
+    <span title="Symbols count total">21k</span>
     <span class="post-meta-divider">|</span>
     <span class="post-meta-item-icon">
       <i class="fa fa-coffee"></i>
     </span>
-    <span title="Reading time total">1:13</span>
+    <span title="Reading time total">1:18</span>
 </div>
   <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
   </div>
