@@ -1,6 +1,12 @@
+---
+title: AliyunCTF--Alimem
+date: 2026-02-07 09:50:00
+tags:
+---
+
 # AliyunCTF--Alimem
 
-## 一. 背景介绍
+# 一. 背景介绍
 
 ​	本题主要是通过实现了一个misc设备来实现一个简单的内存管理模块，支持增删查改以及mmap的回调函数，通过对于本题的学习了解如何注册一个Misc设备并且通过vma_area_struct实现虚拟内存的实现，最终利用多线程竞争的漏洞，实现对于内核页的uaf，利用splice函数将只读的/etc/passwd覆盖，实现提权的思路。
 
@@ -61,7 +67,7 @@ struct pipe_buffer {
                       unsigned long pfn, unsigned long size, pgprot_t prot);
   ```
 
-## 二. 漏洞产生原因
+# 二. 漏洞产生原因
 
 ### 2.1 alimem_mmap函数
 
@@ -227,7 +233,7 @@ static long alimem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 
 ​	但是漏洞主要发生的问题在于在free的时候由于没有加入rcu的读锁，导致我们可以在多线程竞争的情况下不断地free，如果在mmap获取引用和自增refcount之间的这段时间里面free掉了这个页面，那么我们就可以成功的mmap到之前free的一个页面，之后再利用pipe_buffer的分配就可以实现漏洞的利用了。
 
-## 三.漏洞利用
+# 三.漏洞利用
 
 ### 3.1 uaf构造
 
@@ -595,7 +601,7 @@ int main() {
 
 
 
-## 四. 疑难问题
+# 四. 疑难问题
 
 ​	由于busybox中加入了s这个权限，所以导致直接利用cpio进行打包的时候无法重新模拟，之后因此去除了suid的权限，但是会导致后面执行完覆盖/etc/passwd后无法使用su命令切换成root用户。
 
@@ -607,6 +613,6 @@ int main() {
 
 ​	多出来的回车其实是之前的root多了一个x由于这里没有覆盖之前的\n导致出现空行。
 
-## 五. 总结
+# 五. 总结
 
 ​	通过本题的复现，我们可以清楚的掌握如何编写一个模拟内存分配的misc设备，并且如何防止多线程造成的问题（加入rcu写锁）,最后也就是如何利用splice函数实现不用泄露程序基地址就可以直接实现覆盖/etc/passwd，进而实现权限提升，本题难度不大，但是也掌握到了一定的漏洞利用方式。
