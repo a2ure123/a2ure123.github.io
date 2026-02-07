@@ -4,7 +4,7 @@ layout: page
 ---
 
 <div class="category-index-page">
-  {% for category in site.categories.toArray() %}
+  {% for category in site.categories %}
   <div class="category-card">
     <h2 class="category-header">
       <i class="fa fa-folder-open"></i>
@@ -12,7 +12,7 @@ layout: page
       <span class="category-count">{{ category.posts.length }} 篇文章</span>
     </h2>
     <ul class="category-article-list">
-      {% for post in category.posts.sort('date', -1).toArray() %}
+      {% for post in category.posts.sort('date', -1) %}
       <li class="category-article-item">
         <span class="article-date">{{ date(post.date, 'MM-DD') }}</span>
         <a class="article-link" href="{{ url_for(post.path) }}">{{ post.title }}</a>
