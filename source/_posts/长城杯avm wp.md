@@ -1,6 +1,7 @@
 ---
 title: 长城杯avm wp
-categories: CTF
+categories:
+  - CTF
 ---
 ## 一.前言
 
