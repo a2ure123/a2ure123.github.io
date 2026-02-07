@@ -1,6 +1,6 @@
 ---
 title: 长城杯avm wp
-categories: recurrence
+categories: CTF
 ---
 ## 一.前言
 
