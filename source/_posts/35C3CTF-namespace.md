@@ -1,6 +1,7 @@
 ---
 title: 35C3CTF-namespace
-categories: Container security
+categories:
+  - Container security
 ---
 
 ## 前置知识
