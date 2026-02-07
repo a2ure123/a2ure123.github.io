@@ -1,0 +1,94 @@
+---
+title: 
+layout: page
+---
+
+<div class="category-index-page">
+  {% for category in site.categories.toArray() %}
+  <div class="category-card">
+    <h2 class="category-header">
+      <i class="fa fa-folder-open"></i>
+      <a class="category-name" href="{{ url_for(category.path) }}">{{ category.name }}</a>
+      <span class="category-count">{{ category.posts.length }} 篇文章</span>
+    </h2>
+    <ul class="category-article-list">
+      {% for post in category.posts.sort('date', -1).toArray() %}
+      <li class="category-article-item">
+        <span class="article-date">{{ date(post.date, 'MM-DD') }}</span>
+        <a class="article-link" href="{{ url_for(post.path) }}">{{ post.title }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+
+<style>
+.category-index-page {
+  margin-top: 20px;
+}
+.category-card {
+  margin-bottom: 40px;
+  padding: 20px;
+  background: #fff;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  border-radius: 8px;
+  border-top: 3px solid #222;
+  transition: transform 0.3s ease;
+}
+.category-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+}
+.category-header {
+  margin: 0 0 15px 0 !important;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  font-size: 1.4em !important;
+}
+.category-header i {
+  margin-right: 10px;
+  color: #555;
+}
+.category-name {
+  color: #222 !important;
+  border-bottom: none !important;
+  flex-grow: 1;
+}
+.category-count {
+  font-size: 0.6em;
+  color: #999;
+  font-weight: normal;
+}
+.category-article-list {
+  list-style: none;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+.category-article-item {
+  padding: 8px 0;
+  display: flex;
+  align-items: center;
+  border-bottom: 1px dashed #f0f0f0;
+}
+.category-article-item:last-child {
+  border-bottom: none;
+}
+.article-date {
+  font-family: 'Courier New', Courier, monospace;
+  color: #bbb;
+  margin-right: 15px;
+  font-size: 0.9em;
+}
+.article-link {
+  color: #444 !important;
+  border-bottom: none !important;
+  transition: color 0.2s;
+}
+.article-link:hover {
+  color: #222 !important;
+  text-decoration: underline;
+}
+</style>
